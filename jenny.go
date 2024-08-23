@@ -1,5 +1,7 @@
 package codejen
 
+import "reflect"
+
 // A Jenny is a single codejen code generator.
 //
 // Each Jenny works with exactly one type of input to its code generation, as
@@ -53,3 +55,112 @@ type Input = any
 // giggle today.
 //
 // type Jinspiration = any
+
+type JennyS[I Input] interface {
+	// JennyName() string
+	~struct {
+		jennyName func() string
+		o2o       func(I) (*File, error)
+	} | ~struct {
+		jennyName func() string
+		o2m       func(I) (Files, error)
+	} | ~struct {
+		jennyName func() string
+		m2o       func(...I) (*File, error)
+	} | ~struct {
+		jennyName func() string
+		m2m       func(...I) (Files, error)
+	}
+}
+
+type o2o[I Input] struct {
+	jennyName func() string
+	o2o       func(I) (*File, error)
+}
+
+type o2m[I Input] struct {
+	jennyName func() string
+	o2m       func(I) (Files, error)
+}
+
+type m2o[I Input] struct {
+	jennyName func() string
+	m2o       func(...I) (*File, error)
+}
+
+type m2m[I Input] struct {
+	jennyName func() string
+	m2m       func(...I) (Files, error)
+}
+
+// generic type guards have to be written with a func which can have type constraints
+func guard[I Input, J JennyS[I]](j J) bool { return true }
+
+var (
+	_ = guard[any](o2o[any]{})
+	_ = guard[any](m2o[any]{})
+	_ = guard[any](o2m[any]{})
+	_ = guard[any](m2m[any]{})
+)
+
+func generate[I Input, J JennyS[I]](j J, in ...I) (Files, error) {
+	switch jenny := reflect.New(reflect.TypeOf(j)).Elem().Interface().(type) {
+	case o2o[I]:
+		for _, item := range in {
+			f, err := jenny.o2o(item)
+			if procerr := jl.wrapinerr(obj, oneout(jenny, f, err)); procerr != nil {
+				result = multierror.Append(result, procerr)
+			}
+		}
+	case m2o[I]:
+	case o2m[I]:
+		for _, item := range in {
+			f, err := jenny.o2o(item)
+			if procerr := jl.wrapinerr(obj, oneout(jenny, f, err)); procerr != nil {
+				result = multierror.Append(result, procerr)
+			}
+		}
+	case m2m[I]:
+	}
+}
+
+func Generate[I Input, J JennyS[I]](j J, in ...I) (Files, error) {
+
+}
+
+func GenerateFS[I Input, J JennyS[I]](j J, in ...I) (FS, error) {
+
+}
+
+// Seems like we can't do this - this is actually something internal and invisible to the framework
+// declared within each Jenny
+func Decorate[I Input, J JennyS[I]](jenny J) J {
+
+}
+
+// Adapt allows a jenny designed for one type of Input to work with another type of Input, given
+// a func that transforms the adapted Input to the original Input.
+//
+// takes a jenny that accepts a To input and
+func Adapt[OuterI Input, InnerI Input, Outer JennyS[OuterI], Inner JennyS[InnerI]](j Inner, fn func(OuterI) InnerI) Outer {
+
+}
+
+func MapFiles[I Input, J JennyS[I]](j J, fns ...FileMapper) J {}
+
+// Delineating input arity is important because it lets each jenny be truly only
+// focused on its narrow scope - no potential for cross-info leak from one item
+// to another. Can know that a priori
+//
+// Delineating output arity is important because...??
+
+// var _ JennyS[any] = OTO[any]{}
+
+// func (j OTO[Input]) JennyName() string {
+// 	return "foo"
+// }
+
+// func adapt[InI Input, OutI Input, InIJ JennyS[InI], OutIJ JennyS[OutI]](j InIJ, fn func(InI) OutI) OutIJ {
+//
+// }
+

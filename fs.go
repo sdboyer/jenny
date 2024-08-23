@@ -231,12 +231,6 @@ func (fs *FS) Len() int {
 	return ret
 }
 
-// FileMapper takes a File and transforms it into a new File.
-//
-// codejen generally assumes that FileMappers will reuse an
-// unmodified byte slice.
-type FileMapper func(File) (File, error)
-
 // Map creates a new FS by passing each [File] element in the receiver FS
 // through the provided [FileMapper].
 func (fs *FS) Map(fn FileMapper) (*FS, error) {
