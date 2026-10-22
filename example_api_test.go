@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/sdboyer/jenny"
@@ -190,11 +191,11 @@ func ExampleFS_Verify() {
 	_ = fs.Write(ctx, root)
 	fmt.Println("after Write:", fs.Verify(ctx, root))
 
-	_ = os.WriteFile(root+"/team.go", []byte("package edited\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(root, "team.go"), []byte("package edited\n"), 0o600)
 	err = fs.Verify(ctx, root)
 	// The error goes on to include a diff of the file's contents.
 	firstLine, _, _ := strings.Cut(err.Error(), "\n")
-	fmt.Println("after edit:", strings.ReplaceAll(firstLine, root, "<root>"))
+	fmt.Println("after edit:", strings.ReplaceAll(filepath.ToSlash(firstLine), filepath.ToSlash(root), "<root>"))
 	// Output:
 	// after Write: <nil>
 	// after edit: <root>/team.go would have changed:
