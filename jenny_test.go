@@ -181,6 +181,20 @@ func TestNewInvalidFiles(t *testing.T) {
 	}
 }
 
+func TestNewDoesNotMutateGenOutput(t *testing.T) {
+	cached := jenny.Files{*jenny.NewFile("a", nil)}
+	j := ty.New("Cached", func(Type) (jenny.Files, error) { return cached, nil })
+	for range 3 {
+		fl := mustGen(t, j, ab[0])
+		if got := fl[0].FromString(); got != "Cached" {
+			t.Fatalf("From is %q, want %q", got, "Cached")
+		}
+	}
+	if len(cached[0].From) != 0 {
+		t.Errorf("gen func's returned Files were mutated: From is %q", cached[0].FromString())
+	}
+}
+
 func TestWrappersApplyInOrder(t *testing.T) {
 	suffix := func(s string) jenny.FileMapper {
 		return func(f jenny.File) (jenny.File, error) {

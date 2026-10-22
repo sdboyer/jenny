@@ -180,10 +180,14 @@ func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
-		for i := range fl {
-			fl[i].From = append([]NamedJenny{nj}, fl[i].From...)
+		// Stamp copies: a gen func may return a slice it holds on to (e.g. a
+		// cache), which must not accumulate a stamp per call.
+		out := make(Files, len(fl))
+		for i, f := range fl {
+			f.From = append([]NamedJenny{nj}, f.From...)
+			out[i] = f
 		}
-		return fl, nil
+		return out, nil
 	}
 
 	var run func(...I) (Files, error)
