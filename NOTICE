@@ -3,3 +3,6 @@ Copyright Sam Boyer
 
 This product includes software derived from github.com/grafana/codejen,
 Copyright Grafana Labs, licensed under the Apache License, Version 2.0.
+
+mapfs.go is derived from testing/fstest in the Go standard library,
+Copyright The Go Authors, licensed under a BSD-style license; see LICENSE-GO.
