@@ -11,7 +11,6 @@ import (
 	"sync"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/hashicorp/go-multierror"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -42,18 +41,8 @@ import (
 // removed.
 type FS struct {
 	mapFS
+
 	mu sync.RWMutex
-}
-
-// ShouldExistErr is an error that indicates a file should exist, but does not.
-type ShouldExistErr struct {
-	// TODO
-}
-
-// ContentsDifferErr is an error that indicates the contents of a file on disk are
-// different than those in the FS.
-type ContentsDifferErr struct {
-	// TODO
 }
 
 type jennystack []NamedJenny
@@ -81,15 +70,22 @@ func NewFS() *FS {
 func (fs *FS) Verify(ctx context.Context, prefix string) error {
 	g, _ := errgroup.WithContext(ctx)
 	g.SetLimit(12)
-	var result *multierror.Error
+	var (
+		errs []error
+		emu  sync.Mutex
+	)
+	appendErr := func(err error) {
+		emu.Lock()
+		errs = append(errs, err)
+		emu.Unlock()
+	}
 
-	for _, it := range fs.AsFiles() {
-		item := it
+	for _, item := range fs.AsFiles() {
 		g.Go(func() error {
 			ipath := filepath.Join(prefix, item.RelativePath)
 			if _, err := os.Stat(ipath); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
-					result = multierror.Append(result, fmt.Errorf("%s: generated file should exist, but does not", ipath))
+					appendErr(fmt.Errorf("%s: generated file should exist, but does not", ipath))
 				} else {
 					return fmt.Errorf("%s: could not stat generated file: %w", ipath, err)
 				}
@@ -102,7 +98,7 @@ func (fs *FS) Verify(ctx context.Context, prefix string) error {
 			}
 			dstr := cmp.Diff(string(ob), string(item.Data))
 			if dstr != "" {
-				result = multierror.Append(result, fmt.Errorf("%s would have changed:\n\n%s", ipath, dstr))
+				appendErr(fmt.Errorf("%s would have changed:\n\n%s", ipath, dstr))
 			}
 			return nil
 		})
@@ -112,7 +108,7 @@ func (fs *FS) Verify(ctx context.Context, prefix string) error {
 		return fmt.Errorf("io error while verifying tree: %w", err)
 	}
 
-	return result.ErrorOrNil()
+	return errors.Join(errs...)
 }
 
 // Write writes all of the files to their indicated paths.
@@ -124,8 +120,7 @@ func (fs *FS) Write(ctx context.Context, prefix string) error {
 	g, _ := errgroup.WithContext(ctx)
 	g.SetLimit(12)
 
-	for _, item := range fs.AsFiles() {
-		it := item
+	for _, it := range fs.AsFiles() {
 		g.Go(func() error {
 			path := filepath.Join(prefix, it.RelativePath)
 			err := os.MkdirAll(filepath.Dir(path), os.ModePerm)
@@ -133,7 +128,7 @@ func (fs *FS) Write(ctx context.Context, prefix string) error {
 				return fmt.Errorf("%s: failed to ensure parent directory exists: %w", path, err)
 			}
 
-			if err := os.WriteFile(path, it.Data, 0644); err != nil {
+			if err := os.WriteFile(path, it.Data, 0644); err != nil { //nolint:gosec
 				return fmt.Errorf("%s: error while writing file: %w", path, err)
 			}
 			return nil
@@ -185,18 +180,18 @@ func (fs *FS) add(flist ...File) error {
 }
 
 func (fs *FS) addValidated(flist ...File) error {
-	var result *multierror.Error
+	var errs []error
 
 	for _, f := range flist {
 		if rf, has := fs.mapFS[f.RelativePath]; has {
-			result = multierror.Append(result, fmt.Errorf("cannot create %s for jenny %q, path already created by jenny %q", f.RelativePath, jennystack(f.From), stack(rf)))
+			errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path already created by jenny %q", f.RelativePath, jennystack(f.From), stack(rf)))
 		} else if filepath.IsAbs(f.RelativePath) {
-			result = multierror.Append(result, fmt.Errorf("files must have relative paths, got %s from %q", f.RelativePath, jennystack(f.From)))
+			errs = append(errs, fmt.Errorf("files must have relative paths, got %s from %q", f.RelativePath, jennystack(f.From)))
 		}
 	}
 
-	if result.ErrorOrNil() != nil {
-		return result
+	if len(errs) != 0 {
+		return errors.Join(errs...)
 	}
 
 	for _, f := range flist {

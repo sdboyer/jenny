@@ -1,11 +1,10 @@
 package codejen
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
-
-	"github.com/hashicorp/go-multierror"
 )
 
 // NewFile makes it slightly more ergonomic to create a new File than
@@ -35,13 +34,6 @@ type File struct {
 	// From is the stack of jennies responsible for producing this File.
 	// Wrapper jennies should precede the jennies they wrap.
 	From []NamedJenny
-}
-
-func (f File) toMapFile() *mapFile {
-	return &mapFile{
-		Data: f.Data,
-		Sys:  f.From,
-	}
 }
 
 // Exists indicates whether the File should be considered to exist.
@@ -91,23 +83,26 @@ func (f File) FromString() string {
 // Files is a set of File objects.
 //
 // A Files is [Files.Invalid] if it contains a File that does not [File.Exists],
-// or if it contains more than one File having the same [File.RelativePath].
+// or if it contains more than one File having the same [File.RelativePath] (note: this is case-insensitive).
 //
 // These invariants are internally enforced by FS.
 type Files []File
 
 func (fsl Files) Validate() error {
-	var result *multierror.Error
+	var errs []error
+
 	paths := make(map[string][][]NamedJenny)
 	for _, f := range fsl {
+		normalizedPath := strings.ToLower(f.RelativePath)
+
 		if err := f.Validate(); err != nil {
-			result = multierror.Append(result, err)
+			errs = append(errs, err)
 		} else if !f.Exists() {
-			result = multierror.Append(result, fmt.Errorf(`nonexistent File (RelativePath == "") not allowed within Files slice`))
-		} else if exist, has := paths[f.RelativePath]; has {
-			paths[f.RelativePath] = append(exist, f.From)
+			errs = append(errs, fmt.Errorf(`nonexistent File (RelativePath == "") not allowed within Files slice`))
+		} else if exist, has := paths[normalizedPath]; has {
+			paths[normalizedPath] = append(exist, f.From)
 		} else {
-			paths[f.RelativePath] = [][]NamedJenny{f.From}
+			paths[normalizedPath] = [][]NamedJenny{f.From}
 		}
 	}
 	for path, froms := range paths {
@@ -116,8 +111,9 @@ func (fsl Files) Validate() error {
 			for _, from := range froms {
 				fstr = append(fstr, "'"+jennystack(from).String()+"'")
 			}
-			result = multierror.Append(result, fmt.Errorf("multiple files at path %s from jennies: %s", path, strings.Join(fstr, ", ")))
+			errs = append(errs, fmt.Errorf("multiple files at path %s from jennies: %s", path, strings.Join(fstr, ", ")))
 		}
 	}
-	return result.ErrorOrNil()
+
+	return errors.Join(errs...)
 }
