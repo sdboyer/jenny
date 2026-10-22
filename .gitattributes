@@ -1,0 +1,4 @@
+# Check out with LF everywhere. Without this, Windows checkouts get CRLF, which
+# go mod tidy and gofmt treat as changes, and which would differ from what
+# generators write.
+* text=auto eol=lf
