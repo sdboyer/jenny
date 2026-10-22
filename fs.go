@@ -27,7 +27,8 @@ import (
 //
 // FS behaves like an immutable append-only data structure - [File]s may not be
 // removed once [FS.Add]ed. If a path conflict occurs when adding a new file or
-// merging another FS, an error is returned.
+// merging another FS, an error is returned. Paths that differ only by case
+// conflict, since they collide on case-insensitive filesystems.
 //
 // Every File added to FS must have a relative path. An absolute path may be
 // provided as a universal prefix on calls to FS.Write or FS.Verify.
@@ -41,6 +42,11 @@ import (
 // removed.
 type FS struct {
 	mapFS
+
+	// folded maps the lowercased form of each path in mapFS to the path
+	// itself, so conflicts can be detected case-insensitively, consistent
+	// with [Files.Validate].
+	folded map[string]string
 
 	mu sync.RWMutex
 }
@@ -58,7 +64,8 @@ func (js jennystack) String() string {
 // NewFS creates a new FS, ready for use.
 func NewFS() *FS {
 	return &FS{
-		mapFS: make(mapFS),
+		mapFS:  make(mapFS),
+		folded: make(map[string]string),
 	}
 }
 
@@ -183,8 +190,13 @@ func (fs *FS) addValidated(flist ...File) error {
 	var errs []error
 
 	for _, f := range flist {
-		if rf, has := fs.mapFS[f.RelativePath]; has {
-			errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path already created by jenny %q", f.RelativePath, jennystack(f.From), stack(rf)))
+		if existing, has := fs.folded[strings.ToLower(f.RelativePath)]; has {
+			rf := fs.mapFS[existing]
+			if existing == f.RelativePath {
+				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path already created by jenny %q", f.RelativePath, jennystack(f.From), stack(rf)))
+			} else {
+				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path differs only by case from %s, created by jenny %q", f.RelativePath, jennystack(f.From), existing, stack(rf)))
+			}
 		} else if filepath.IsAbs(f.RelativePath) {
 			errs = append(errs, fmt.Errorf("files must have relative paths, got %s from %q", f.RelativePath, jennystack(f.From)))
 		}
@@ -196,24 +208,25 @@ func (fs *FS) addValidated(flist ...File) error {
 
 	for _, f := range flist {
 		fs.mapFS[f.RelativePath] = &mapFile{Data: f.Data, Sys: f.From}
+		fs.folded[strings.ToLower(f.RelativePath)] = f.RelativePath
 	}
 	return nil
 }
 
 // Merge combines all the entries from the provided FS into the receiver
-// FS. Duplicate paths result in an error.
+// FS. Duplicate paths, including paths that differ only by case, result in
+// an error.
 func (fs *FS) Merge(fs2 *FS) error {
 	if fs2 == nil {
 		return nil
 	}
 
+	// Snapshot fs2 under its own read lock before taking fs's write lock, so
+	// that fs2 can't change mid-read, and so fs.Merge(fs) can't deadlock.
+	flist := fs2.AsFiles()
+
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-
-	flist := make([]File, 0, len(fs2.mapFS))
-	for k, inf := range fs2.mapFS {
-		flist = append(flist, toFile(k, inf))
-	}
 
 	return fs.add(flist...)
 }
