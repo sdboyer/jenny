@@ -31,8 +31,8 @@ type File struct {
 	// Data is the contents of the file.
 	Data []byte
 
-	// From is the stack of jennies responsible for producing this File.
-	// Wrapper jennies should precede the jennies they wrap.
+	// From is the stack of named jennies responsible for producing this File,
+	// outermost first. Jennies made with [Builder.New] add themselves to it.
 	From []NamedJenny
 }
 
