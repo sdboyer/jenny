@@ -18,6 +18,7 @@ linters:
     - godot
     - godox
     - gomoddirectives
+    - gomodguard # deprecated in favor of gomodguard_v2, which default: all also enables
     - govet
     - intrange
     - ireturn
