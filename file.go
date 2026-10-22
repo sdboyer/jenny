@@ -1,4 +1,4 @@
-package codejen
+package jenny
 
 import (
 	"errors"
@@ -20,7 +20,7 @@ func NewFile(path string, data []byte, from ...NamedJenny) *File {
 // File is a single file, intended to be written or compared against
 // existing files on disk through an [FS].
 //
-// codejen treats a File with an empty RelativePath as not existing,
+// jenny treats a File with an empty RelativePath as not existing,
 // regardless of whether Data is empty. Thus, the zero value of File is
 // considered not to exist.
 type File struct {

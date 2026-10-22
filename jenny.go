@@ -1,4 +1,4 @@
-package codejen
+package jenny
 
 // A Jenny is a single codejen code generator.
 //

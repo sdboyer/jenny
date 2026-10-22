@@ -1,4 +1,4 @@
-package codejen
+package jenny
 
 import (
 	"context"
@@ -228,7 +228,7 @@ func (fs *FS) Len() int {
 
 // FileMapper takes a File and transforms it into a new File.
 //
-// codejen generally assumes that FileMappers will reuse an
+// jenny generally assumes that FileMappers will reuse an
 // unmodified byte slice.
 type FileMapper func(File) (File, error)
 
