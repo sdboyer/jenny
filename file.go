@@ -3,6 +3,7 @@ package jenny
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strings"
 )
@@ -41,8 +42,13 @@ func (f File) Exists() bool {
 	return f.RelativePath != ""
 }
 
-// Validate checks that the File is valid - has a relative path, and at least
-// one jenny in its From.
+// Validate checks that the File is valid: its RelativePath is a clean,
+// relative, slash-separated path (per [io/fs.ValidPath], and with no
+// backslashes), and it has at least one jenny in its From.
+//
+// The path rules guarantee that writing the File beneath a directory, as
+// [FS.Write] does, can never place it outside that directory, and that the
+// File is reachable through the [FS]'s [io/fs.FS] implementation.
 func (f File) Validate() error {
 	if !f.Exists() {
 		return nil
@@ -50,6 +56,9 @@ func (f File) Validate() error {
 
 	if filepath.IsAbs(f.RelativePath) {
 		return fmt.Errorf("%s: File paths must be relative", f.RelativePath)
+	}
+	if !fs.ValidPath(f.RelativePath) || strings.Contains(f.RelativePath, `\`) {
+		return fmt.Errorf("%s: File paths must be clean and slash-separated, with no '.', '..' or empty elements and no backslashes", f.RelativePath)
 	}
 	if len(f.From) == 0 {
 		return fmt.Errorf("%s: File must have at least one From jenny", f.RelativePath)

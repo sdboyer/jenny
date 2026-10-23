@@ -76,6 +76,13 @@ func TestVerifyManyMismatches(t *testing.T) {
 	}
 }
 
+func TestWriteCannotEscapeRoot(t *testing.T) {
+	jfs := jenny.NewFS()
+	if err := jfs.Add(*jenny.NewFile("../escaped.txt", []byte("x"), src("test"))); err == nil {
+		t.Fatal("FS accepted a File whose path escapes the root")
+	}
+}
+
 func TestMergeMap(t *testing.T) {
 	a := fsWith(t, *jenny.NewFile("a", []byte("a"), src("test")))
 	b := fsWith(t, *jenny.NewFile("b", []byte("b"), src("test")))
@@ -108,6 +115,13 @@ func TestFilesValidate(t *testing.T) {
 		"duplicate":             {jenny.Files{*jenny.NewFile("a", nil, src("t")), *jenny.NewFile("a", nil, src("t"))}, true},
 		"case-insensitive dupe": {jenny.Files{*jenny.NewFile("a", nil, src("t")), *jenny.NewFile("A", nil, src("t"))}, true},
 		"absolute":              {jenny.Files{*jenny.NewFile("/a", nil, src("t"))}, true},
+		"nested":                {jenny.Files{*jenny.NewFile("a/b/c.go", nil, src("t"))}, false},
+		"parent escape":         {jenny.Files{*jenny.NewFile("../a", nil, src("t"))}, true},
+		"inner parent escape":   {jenny.Files{*jenny.NewFile("a/../../b", nil, src("t"))}, true},
+		"dot element":           {jenny.Files{*jenny.NewFile("./a", nil, src("t"))}, true},
+		"empty element":         {jenny.Files{*jenny.NewFile("a//b", nil, src("t"))}, true},
+		"trailing slash":        {jenny.Files{*jenny.NewFile("a/", nil, src("t"))}, true},
+		"backslash":             {jenny.Files{*jenny.NewFile(`a\..\..\b`, nil, src("t"))}, true},
 		"no From":               {jenny.Files{*jenny.NewFile("a", nil)}, true},
 		"nonexistent":           {jenny.Files{{}}, true},
 	}
