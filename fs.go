@@ -63,29 +63,31 @@ func NewFS() *FS {
 }
 
 // Verify checks the contents of each file against the filesystem. It emits an error
-// if any of its contained files differ.
+// if any of its contained files differ, listing every differing file in path
+// order.
+//
+// Verify stops early, returning an error wrapping ctx's error, if ctx is done.
 //
 // If the provided prefix path is non-empty, it will be prepended to all file
 // entries in the map for writing. prefix may be an absolute path.
 func (fs *FS) Verify(ctx context.Context, prefix string) error {
-	g, _ := errgroup.WithContext(ctx)
+	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(12)
-	var (
-		errs []error
-		emu  sync.Mutex
-	)
-	appendErr := func(err error) {
-		emu.Lock()
-		errs = append(errs, err)
-		emu.Unlock()
-	}
 
-	for _, item := range fs.AsFiles() {
+	files := fs.AsFiles()
+	// Indexed by file, so the joined error lists files in path order no matter
+	// which goroutine finishes first.
+	diffs := make([]error, len(files))
+
+	for i, item := range files {
 		g.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				return err
+			}
 			ipath := filepath.Join(prefix, item.RelativePath)
 			if _, err := os.Stat(ipath); err != nil {
 				if errors.Is(err, os.ErrNotExist) {
-					appendErr(fmt.Errorf("%s: generated file should exist, but does not", ipath))
+					diffs[i] = fmt.Errorf("%s: generated file should exist, but does not", ipath)
 				} else {
 					return fmt.Errorf("%s: could not stat generated file: %w", ipath, err)
 				}
@@ -98,7 +100,7 @@ func (fs *FS) Verify(ctx context.Context, prefix string) error {
 			}
 			dstr := cmp.Diff(string(ob), string(item.Data))
 			if dstr != "" {
-				appendErr(fmt.Errorf("%s would have changed:\n\n%s", ipath, dstr))
+				diffs[i] = fmt.Errorf("%s would have changed:\n\n%s", ipath, dstr)
 			}
 			return nil
 		})
@@ -108,20 +110,26 @@ func (fs *FS) Verify(ctx context.Context, prefix string) error {
 		return fmt.Errorf("io error while verifying tree: %w", err)
 	}
 
-	return errors.Join(errs...)
+	return errors.Join(diffs...)
 }
 
 // Write writes all of the files to their indicated paths.
 //
 // If the provided prefix path is non-empty, it will be prepended to all file
 // entries in the map for writing. prefix may be an absolute path.
+//
+// Write stops starting new writes once ctx is done, or once any write fails;
+// files already written are left in place.
 // TODO try to undo already-written files on error (only best effort, it's impossible to guarantee)
 func (fs *FS) Write(ctx context.Context, prefix string) error {
-	g, _ := errgroup.WithContext(ctx)
+	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(12)
 
 	for _, it := range fs.AsFiles() {
 		g.Go(func() error {
+			if err := gctx.Err(); err != nil {
+				return err
+			}
 			path := filepath.Join(prefix, it.RelativePath)
 			err := os.MkdirAll(filepath.Dir(path), os.ModePerm)
 			if err != nil {
