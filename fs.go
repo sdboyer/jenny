@@ -32,9 +32,9 @@ import (
 // Every File added to FS must have a relative path. An absolute path may be
 // provided as a universal prefix on calls to FS.Write or FS.Verify.
 //
-// FS implements [io/fs.FS], backed by [fstest.MapFS]. Added mutexes make FS
-// safe for concurrent use, but it has the same scaling limitations as
-// [fstest.MapFS] for large numbers of files.
+// FS implements [io/fs.FS], backed by a copy of [testing/fstest.MapFS]. Added
+// mutexes make FS safe for concurrent use, but it has the same scaling
+// limitations as [testing/fstest.MapFS] for large numbers of files.
 //
 // Note that the statelessness of FS entails that if a particular Jenny Input
 // goes away, FS.Verify cannot know what orphaned generated files should be
