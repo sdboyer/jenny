@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"testing/fstest"
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
@@ -41,9 +42,9 @@ import (
 // goes away, FS.Verify cannot know what orphaned generated files should be
 // removed.
 type FS struct {
-	mapFS
+	m fstest.MapFS
 
-	// folded maps the lowercased form of each path in mapFS to the path
+	// folded maps the lowercased form of each path in m to the path
 	// itself, so conflicts can be detected case-insensitively, consistent
 	// with [Files.Validate].
 	folded map[string]string
@@ -64,7 +65,7 @@ func (js jennystack) String() string {
 // NewFS creates a new FS, ready for use.
 func NewFS() *FS {
 	return &FS{
-		mapFS:  make(mapFS),
+		m:      make(fstest.MapFS),
 		folded: make(map[string]string),
 	}
 }
@@ -163,9 +164,9 @@ func (fs *FS) AsFiles() []File {
 	}
 
 	fs.mu.RLock()
-	sl := make([]File, 0, len(fs.mapFS))
+	sl := make([]File, 0, len(fs.m))
 
-	for path, fi := range fs.mapFS {
+	for path, fi := range fs.m {
 		sl = append(sl, toFile(path, fi))
 	}
 
@@ -199,7 +200,7 @@ func (fs *FS) addValidated(flist ...File) error {
 
 	for _, f := range flist {
 		if existing, has := fs.folded[strings.ToLower(f.RelativePath)]; has {
-			rf := fs.mapFS[existing]
+			rf := fs.m[existing]
 			if existing == f.RelativePath {
 				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path already created by jenny %q", f.RelativePath, jennystack(f.From), stack(rf)))
 			} else {
@@ -215,7 +216,7 @@ func (fs *FS) addValidated(flist ...File) error {
 	}
 
 	for _, f := range flist {
-		fs.mapFS[f.RelativePath] = &mapFile{Data: f.Data, Sys: f.From}
+		fs.m[f.RelativePath] = &fstest.MapFile{Data: f.Data, Sys: f.From}
 		fs.folded[strings.ToLower(f.RelativePath)] = f.RelativePath
 	}
 	return nil
@@ -242,7 +243,7 @@ func (fs *FS) Merge(fs2 *FS) error {
 // Len returns the number of items in the FS.
 func (fs *FS) Len() int {
 	fs.mu.Lock()
-	ret := len(fs.mapFS)
+	ret := len(fs.m)
 	fs.mu.Unlock()
 	return ret
 }
@@ -272,7 +273,7 @@ func (fs *FS) Map(fn FileMapper) (*FS, error) {
 	return fs2, nil
 }
 
-func toFile(path string, mf *mapFile) File {
+func toFile(path string, mf *fstest.MapFile) File {
 	return File{
 		RelativePath: path,
 		Data:         mf.Data,
@@ -280,6 +281,6 @@ func toFile(path string, mf *mapFile) File {
 	}
 }
 
-func stack(mf *mapFile) jennystack {
+func stack(mf *fstest.MapFile) jennystack {
 	return jennystack(mf.Sys.([]NamedJenny))
 }
