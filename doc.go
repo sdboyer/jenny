@@ -5,8 +5,9 @@
 // # One jenny, one purpose
 //
 // Code generators tend to become spaghetti. Without a rule for where new
-// output belongs, one generator grows to emit several kinds of file, and
-// outputs start reaching into each other's code. jenny is built on one
+// output belongs, one generator grows to emit several kinds of file. It
+// sprouts knobs for each new variant and fills up with conditionals that check
+// them, and outputs start reaching into each other's code. jenny is built on one
 // constraint: a jenny maps an input type to a file with a single functional
 // purpose. Go types for a resource are one jenny. A list of endpoints that
 // references those types is another, a many-input jenny over the same inputs.
@@ -16,6 +17,12 @@
 // one responsibility, and they're combined through the composition operations
 // below. The generator funcs themselves are ordinary Go, written however you
 // like.
+//
+// The constraint is enforced by the language, not by convention. A jenny's
+// signature is inputs in and files out, and its func never sees what other
+// jennies produce. Where a hand-rolled generator would add a knob and a
+// conditional, a jenny-based one usually adds a jenny. That doesn't guarantee
+// cleanly defined responsibilities, but it tends to produce them.
 //
 // # Generator funcs and jennies
 //

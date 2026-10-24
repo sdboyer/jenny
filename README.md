@@ -2,9 +2,11 @@
 
 jenny is a code generation framework for Go. It's for generators that take one set of definitions (schemas, API specs, config) and produce many kinds of output: types in several languages, registries, clients, docs.
 
-Generators like that tend to become spaghetti. Without a rule for where new output belongs, one generator grows to emit several kinds of file, outputs start reaching into each other's code, and the plumbing every generator needs ends up copied everywhere, slightly differently each time. That plumbing includes looping over inputs, saying which input failed, placing files, adding headers and catching path collisions.
+Generators like that tend to become spaghetti. Without a rule for where new output belongs, one generator grows to emit several kinds of file. It sprouts knobs for each new variant and fills up with conditionals that check them. Outputs start reaching into each other's code, and the plumbing every generator needs ends up copied everywhere, slightly differently each time. That plumbing includes looping over inputs, saying which input failed, placing files, adding headers and catching path collisions.
 
 jenny is built on one constraint: **a jenny maps an input type to a file with a single functional purpose.** Go types for a resource are one jenny. A list of endpoints that references those types is another, a many-input jenny over the same inputs. A jenny that produces several files is ordinarily an aggregator. Jennies don't call each other or modify each other's output. Each takes on one responsibility, and they're composed side by side.
+
+The constraint is enforced by the language, not by convention. A jenny's signature is inputs in and files out, and its func never sees what other jennies produce. Where a hand-rolled generator would add a knob and a conditional, a jenny-based one usually adds a jenny. That doesn't guarantee cleanly defined responsibilities, but it tends to produce them.
 
 Generator funcs are plain Go that turn inputs into files, written however you like. Everything between them is composition. You combine jennies into one tree that reads like the output it produces, and the framework does the plumbing. Then you write the result to disk, or in CI, check that what's on disk is up to date.
 
