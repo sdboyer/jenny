@@ -91,12 +91,16 @@ func (f File) FromString() string {
 
 // Files is a set of File objects.
 //
-// A Files is [Files.Invalid] if it contains a File that does not [File.Exists],
-// or if it contains more than one File having the same [File.RelativePath] (note: this is case-insensitive).
+// A Files is invalid (per [Files.Validate]) if it contains a File that does
+// not [File.Exists], or if it contains more than one File having the same
+// [File.RelativePath] (note: this is case-insensitive).
 //
 // These invariants are internally enforced by FS.
 type Files []File
 
+// Validate checks every File with [File.Validate], and checks that no two
+// Files have paths that are equal, ignoring case. All problems found are
+// returned together.
 func (fsl Files) Validate() error {
 	var errs []error
 
