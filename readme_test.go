@@ -74,7 +74,7 @@ func versions(r Resource) ([]Version, error) {
 	return vs, nil
 }
 
-func tsClient(v Version) (*jenny.File, error) {
+func tsPaths(v Version) (*jenny.File, error) {
 	data := fmt.Sprintf("export const path = %q;\n", fmt.Sprintf("/api/v%d/%s", v.N, v.Resource.Name))
 	return jenny.NewFile(fmt.Sprintf("%s/v%d.ts", v.Resource.Name, v.N), []byte(data)), nil
 }
@@ -182,7 +182,7 @@ func Example_readmeDecorate() {
 
 func Example_readmeAdapt() {
 	gen := api.Adapt(versions,
-		ver.New("TSClient", tsClient),
+		ver.New("TSPaths", tsPaths),
 		ver.New("TSIndex", tsIndex),
 	).Prefix("web/src/api")
 
@@ -191,10 +191,10 @@ func Example_readmeAdapt() {
 	fmt.Print(string(fl[0].Data))
 	// Output:
 	// web/src/api/playlist/index.ts (TSIndex)
-	// web/src/api/playlist/v1.ts (TSClient)
-	// web/src/api/playlist/v2.ts (TSClient)
+	// web/src/api/playlist/v1.ts (TSPaths)
+	// web/src/api/playlist/v2.ts (TSPaths)
 	// web/src/api/team/index.ts (TSIndex)
-	// web/src/api/team/v1.ts (TSClient)
+	// web/src/api/team/v1.ts (TSPaths)
 	// export * as v1 from "./v1";
 	// export * as v2 from "./v2";
 }
@@ -206,7 +206,7 @@ func Example_readme() {
 			api.New("Routes", routes),
 		).Map(gofmt),
 		api.Adapt(versions,
-			ver.New("TSClient", tsClient),
+			ver.New("TSPaths", tsPaths),
 			ver.New("TSIndex", tsIndex),
 		).Prefix("web/src/api"),
 	)
@@ -216,8 +216,8 @@ func Example_readme() {
 	// pkg/api/routes.go (Routes)
 	// pkg/api/team.go (GoTypes)
 	// web/src/api/playlist/index.ts (TSIndex)
-	// web/src/api/playlist/v1.ts (TSClient)
-	// web/src/api/playlist/v2.ts (TSClient)
+	// web/src/api/playlist/v1.ts (TSPaths)
+	// web/src/api/playlist/v2.ts (TSPaths)
 	// web/src/api/team/index.ts (TSIndex)
-	// web/src/api/team/v1.ts (TSClient)
+	// web/src/api/team/v1.ts (TSPaths)
 }
