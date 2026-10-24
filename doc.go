@@ -2,6 +2,21 @@
 // small, single-purpose generator funcs, and for writing their output to disk
 // or verifying that output already on disk is up to date.
 //
+// # One jenny, one purpose
+//
+// Code generators tend to become spaghetti. Without a rule for where new
+// output belongs, one generator grows to emit several kinds of file, and
+// outputs start reaching into each other's code. jenny is built on one
+// constraint: a jenny maps an input type to a file with a single functional
+// purpose. Go types for a resource are one jenny. A list of endpoints that
+// references those types is another, a many-input jenny over the same inputs.
+// A jenny that produces several files is ordinarily an aggregator.
+//
+// Jennies don't call each other or modify each other's output. Each takes on
+// one responsibility, and they're combined through the composition operations
+// below. The generator funcs themselves are ordinary Go, written however you
+// like.
+//
 // # Generator funcs and jennies
 //
 // A generator func takes one or many inputs and produces one or many files
@@ -59,9 +74,6 @@
 //			typ.New("TypeIndex", genTypeIndex), // func(...Type) (*File, error)
 //		),
 //	)
-//
-// Code that composes content - one generator calling another and modifying
-// its output - is ordinary Go: write a generator func that calls the other.
 //
 // # Output
 //
