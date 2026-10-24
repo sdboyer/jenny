@@ -13,9 +13,10 @@
 // references those types is another, a many-input jenny over the same inputs.
 // A jenny that produces several files is ordinarily an aggregator.
 //
-// Jennies don't call each other or modify each other's output. Each takes on
-// one responsibility, and they're combined through the composition operations
-// below. The generator funcs themselves are ordinary Go, written however you
+// Generator funcs don't call each other. Each jenny takes on one
+// responsibility, and jennies are combined through the composition operations
+// below. Anything that operates on another jenny's output, such as adding a
+// header, is itself composed in through those operations. The generator funcs themselves are ordinary Go, written however you
 // like.
 //
 // The constraint is enforced by the language, not by convention. A jenny's
