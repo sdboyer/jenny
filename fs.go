@@ -96,8 +96,12 @@ func (fs *FS) Write(ctx context.Context, prefix string) error {
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			path := filepath.Join(prefix, it.RelativePath)
-			err := os.MkdirAll(filepath.Dir(path), os.ModePerm)
+			local, err := filepath.Localize(it.RelativePath)
+			if err != nil {
+				return fmt.Errorf("%s: cannot be written on this OS: %w", it.RelativePath, err)
+			}
+			path := filepath.Join(prefix, local)
+			err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
 			if err != nil {
 				return fmt.Errorf("%s: failed to ensure parent directory exists: %w", path, err)
 			}
@@ -164,8 +168,6 @@ func (fs *FS) addValidated(flist ...File) error {
 			} else {
 				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path differs only by case from %s, created by jenny %q", f.RelativePath, jennystack(f.From), existing, stack(rf)))
 			}
-		} else if filepath.IsAbs(f.RelativePath) {
-			errs = append(errs, fmt.Errorf("files must have relative paths, got %s from %q", f.RelativePath, jennystack(f.From)))
 		}
 	}
 
