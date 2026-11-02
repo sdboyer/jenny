@@ -11,7 +11,6 @@ import (
 	"sync"
 	"testing/fstest"
 
-	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -70,55 +69,14 @@ func NewFS() *FS {
 	}
 }
 
-// Verify checks the contents of each file against the filesystem. It emits an error
-// if any of its contained files differ, listing every differing file in path
-// order.
-//
-// Verify stops early, returning an error wrapping ctx's error, if ctx is done.
-//
-// If the provided prefix path is non-empty, it will be prepended to all file
-// entries in the map for writing. prefix may be an absolute path.
+// Verify is [FS.VerifyFS] against the directory prefix, read through
+// [os.DirFS]. prefix may be an absolute path; an empty prefix is the current
+// directory.
 func (fs *FS) Verify(ctx context.Context, prefix string) error {
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(12)
-
-	files := fs.AsFiles()
-	// Indexed by file, so the joined error lists files in path order no matter
-	// which goroutine finishes first.
-	diffs := make([]error, len(files))
-
-	for i, item := range files {
-		g.Go(func() error {
-			if err := gctx.Err(); err != nil {
-				return err
-			}
-			ipath := filepath.Join(prefix, item.RelativePath)
-			if _, err := os.Stat(ipath); err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					diffs[i] = fmt.Errorf("%s: generated file should exist, but does not", ipath)
-				} else {
-					return fmt.Errorf("%s: could not stat generated file: %w", ipath, err)
-				}
-				return nil
-			}
-
-			ob, err := os.ReadFile(ipath) //nolint:gosec
-			if err != nil {
-				return fmt.Errorf("%s: error reading file: %w", ipath, err)
-			}
-			dstr := cmp.Diff(string(ob), string(item.Data))
-			if dstr != "" {
-				diffs[i] = fmt.Errorf("%s would have changed:\n\n%s", ipath, dstr)
-			}
-			return nil
-		})
+	if prefix == "" {
+		prefix = "."
 	}
-	err := g.Wait()
-	if err != nil {
-		return fmt.Errorf("io error while verifying tree: %w", err)
-	}
-
-	return errors.Join(diffs...)
+	return fs.VerifyFS(ctx, os.DirFS(prefix))
 }
 
 // Write writes all of the files to their indicated paths.
