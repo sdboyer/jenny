@@ -3,8 +3,6 @@ package jenny
 import (
 	"errors"
 	"fmt"
-	"io/fs"
-	"path/filepath"
 	"strings"
 )
 
@@ -43,8 +41,14 @@ func (f File) Exists() bool {
 }
 
 // Validate checks that the File is valid: its RelativePath is a clean,
-// relative, slash-separated path (per [io/fs.ValidPath], and with no
-// backslashes), and it has at least one jenny in its From.
+// relative, slash-separated path (per [io/fs.ValidPath]) that means the same
+// thing on every OS, and it has at least one jenny in its From.
+//
+// A path that means the same thing on every OS has no backslashes, no colons
+// (drive letters or stream names on Windows), no NUL bytes, and no element
+// that Windows reserves as a device name, such as NUL, COM1 or aux.go. These
+// rules don't depend on the OS Validate runs on, so a path is rejected
+// wherever it is generated, not only when it is written on Windows.
 //
 // The path rules guarantee that writing the File beneath a directory, as
 // [FS.Write] does, can never place it outside that directory, and that the
@@ -54,11 +58,8 @@ func (f File) Validate() error {
 		return nil
 	}
 
-	if filepath.IsAbs(f.RelativePath) {
-		return fmt.Errorf("%s: File paths must be relative", f.RelativePath)
-	}
-	if !fs.ValidPath(f.RelativePath) || strings.Contains(f.RelativePath, `\`) {
-		return fmt.Errorf("%s: File paths must be clean and slash-separated, with no '.', '..' or empty elements and no backslashes", f.RelativePath)
+	if err := checkPath(f.RelativePath); err != nil {
+		return err
 	}
 	if len(f.From) == 0 {
 		return fmt.Errorf("%s: File must have at least one From jenny", f.RelativePath)
