@@ -105,7 +105,7 @@ type Files []File
 func (fsl Files) Validate() error {
 	var errs []error
 
-	paths := make(map[string][][]NamedJenny)
+	paths := make(map[string][]jennystack)
 	for _, f := range fsl {
 		normalizedPath := strings.ToLower(f.RelativePath)
 
@@ -116,14 +116,14 @@ func (fsl Files) Validate() error {
 		} else if exist, has := paths[normalizedPath]; has {
 			paths[normalizedPath] = append(exist, f.From)
 		} else {
-			paths[normalizedPath] = [][]NamedJenny{f.From}
+			paths[normalizedPath] = []jennystack{f.From}
 		}
 	}
 	for path, froms := range paths {
 		if len(froms) > 1 {
-			fstr := make([]string, 0, len(froms))
-			for _, from := range froms {
-				fstr = append(fstr, "'"+jennystack(from).String()+"'")
+			fstr := describeStacks(froms...)
+			for i := range fstr {
+				fstr[i] = "'" + fstr[i] + "'"
 			}
 			errs = append(errs, fmt.Errorf("multiple files at path %s from jennies: %s", path, strings.Join(fstr, ", ")))
 		}

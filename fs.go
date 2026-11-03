@@ -61,6 +61,34 @@ func (js jennystack) String() string {
 	return strings.Join(strs, ":")
 }
 
+// qualified is like String, but prefixes each name with its package.
+func (js jennystack) qualified() string {
+	strs := make([]string, len(js))
+	for i, j := range js {
+		strs[i] = j.JennyPackage() + "." + j.JennyName()
+	}
+	return strings.Join(strs, ":")
+}
+
+// describeStacks renders the stacks for an error message. They're qualified
+// with package names only if two of them would otherwise read the same.
+func describeStacks(stacks ...jennystack) []string {
+	strs := make([]string, len(stacks))
+	seen := make(map[string]bool, len(stacks))
+	ambiguous := false
+	for i, js := range stacks {
+		strs[i] = js.String()
+		ambiguous = ambiguous || seen[strs[i]]
+		seen[strs[i]] = true
+	}
+	if ambiguous {
+		for i, js := range stacks {
+			strs[i] = js.qualified()
+		}
+	}
+	return strs
+}
+
 // NewFS creates a new FS, ready for use.
 func NewFS() *FS {
 	return &FS{
@@ -162,11 +190,11 @@ func (fs *FS) addValidated(flist ...File) error {
 
 	for _, f := range flist {
 		if existing, has := fs.folded[strings.ToLower(f.RelativePath)]; has {
-			rf := fs.m[existing]
+			names := describeStacks(jennystack(f.From), stack(fs.m[existing]))
 			if existing == f.RelativePath {
-				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path already created by jenny %q", f.RelativePath, jennystack(f.From), stack(rf)))
+				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path already created by jenny %q", f.RelativePath, names[0], names[1]))
 			} else {
-				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path differs only by case from %s, created by jenny %q", f.RelativePath, jennystack(f.From), existing, stack(rf)))
+				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path differs only by case from %s, created by jenny %q", f.RelativePath, names[0], existing, names[1]))
 			}
 		}
 	}

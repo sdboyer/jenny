@@ -12,9 +12,9 @@ import (
 
 func TestFSConformsToIOFS(t *testing.T) {
 	jfs := fsWith(t,
-		*jenny.NewFile("a.txt", []byte("a"), src("test")),
-		*jenny.NewFile("d/b.txt", []byte("b"), src("test")),
-		*jenny.NewFile("d/e/c.txt", []byte("c"), src("test")),
+		*jenny.NewFile("a.txt", []byte("a"), jenny.Name("test")),
+		*jenny.NewFile("d/b.txt", []byte("b"), jenny.Name("test")),
+		*jenny.NewFile("d/e/c.txt", []byte("c"), jenny.Name("test")),
 	)
 	if err := fstest.TestFS(jfs, "a.txt", "d/b.txt", "d/e/c.txt"); err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestFSConformsToIOFS(t *testing.T) {
 
 // Run with -race: every io/fs method must be safe to call during FS.Add.
 func TestFSReadsDuringAdd(t *testing.T) {
-	jfs := fsWith(t, *jenny.NewFile("d/seed", []byte("x"), src("test")))
+	jfs := fsWith(t, *jenny.NewFile("d/seed", []byte("x"), jenny.Name("test")))
 	sub, err := jfs.Sub("d")
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestFSReadsDuringAdd(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		for i := range 200 {
-			_ = jfs.Add(*jenny.NewFile("d/f"+strings.Repeat("x", i), []byte("x"), src("test")))
+			_ = jfs.Add(*jenny.NewFile("d/f"+strings.Repeat("x", i), []byte("x"), jenny.Name("test")))
 		}
 	})
 	for range 100 {

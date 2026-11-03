@@ -12,10 +12,6 @@ import (
 	"github.com/sdboyer/jenny"
 )
 
-type src string
-
-func (s src) JennyName() string { return string(s) }
-
 func fsWith(t *testing.T, fl ...jenny.File) *jenny.FS {
 	t.Helper()
 	jfs := jenny.NewFS()
@@ -29,8 +25,8 @@ func TestWriteVerify(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	jfs := fsWith(t,
-		*jenny.NewFile("a.txt", []byte("a"), src("test")),
-		*jenny.NewFile("sub/b.txt", []byte("b"), src("test")),
+		*jenny.NewFile("a.txt", []byte("a"), jenny.Name("test")),
+		*jenny.NewFile("sub/b.txt", []byte("b"), jenny.Name("test")),
 	)
 
 	if err := jfs.Verify(ctx, dir); err == nil {
@@ -65,7 +61,7 @@ func TestWriteVerify(t *testing.T) {
 func TestVerifyManyMismatches(t *testing.T) {
 	fl := make([]jenny.File, 200)
 	for i := range fl {
-		fl[i] = *jenny.NewFile(fmt.Sprintf("f%03d", i), []byte("x"), src("test"))
+		fl[i] = *jenny.NewFile(fmt.Sprintf("f%03d", i), []byte("x"), jenny.Name("test"))
 	}
 	err := fsWith(t, fl...).Verify(context.Background(), t.TempDir())
 	if err == nil {
@@ -78,14 +74,14 @@ func TestVerifyManyMismatches(t *testing.T) {
 
 func TestWriteCannotEscapeRoot(t *testing.T) {
 	jfs := jenny.NewFS()
-	if err := jfs.Add(*jenny.NewFile("../escaped.txt", []byte("x"), src("test"))); err == nil {
+	if err := jfs.Add(*jenny.NewFile("../escaped.txt", []byte("x"), jenny.Name("test"))); err == nil {
 		t.Fatal("FS accepted a File whose path escapes the root")
 	}
 }
 
 func TestMergeMap(t *testing.T) {
-	a := fsWith(t, *jenny.NewFile("a", []byte("a"), src("test")))
-	b := fsWith(t, *jenny.NewFile("b", []byte("b"), src("test")))
+	a := fsWith(t, *jenny.NewFile("a", []byte("a"), jenny.Name("test")))
+	b := fsWith(t, *jenny.NewFile("b", []byte("b"), jenny.Name("test")))
 	if err := a.Merge(b); err != nil {
 		t.Fatal(err)
 	}
@@ -111,17 +107,17 @@ func TestFilesValidate(t *testing.T) {
 		fl      jenny.Files
 		wantErr bool
 	}{
-		"ok":                    {jenny.Files{*jenny.NewFile("a", nil, src("t")), *jenny.NewFile("b", nil, src("t"))}, false},
-		"duplicate":             {jenny.Files{*jenny.NewFile("a", nil, src("t")), *jenny.NewFile("a", nil, src("t"))}, true},
-		"case-insensitive dupe": {jenny.Files{*jenny.NewFile("a", nil, src("t")), *jenny.NewFile("A", nil, src("t"))}, true},
-		"absolute":              {jenny.Files{*jenny.NewFile("/a", nil, src("t"))}, true},
-		"nested":                {jenny.Files{*jenny.NewFile("a/b/c.go", nil, src("t"))}, false},
-		"parent escape":         {jenny.Files{*jenny.NewFile("../a", nil, src("t"))}, true},
-		"inner parent escape":   {jenny.Files{*jenny.NewFile("a/../../b", nil, src("t"))}, true},
-		"dot element":           {jenny.Files{*jenny.NewFile("./a", nil, src("t"))}, true},
-		"empty element":         {jenny.Files{*jenny.NewFile("a//b", nil, src("t"))}, true},
-		"trailing slash":        {jenny.Files{*jenny.NewFile("a/", nil, src("t"))}, true},
-		"backslash":             {jenny.Files{*jenny.NewFile(`a\..\..\b`, nil, src("t"))}, true},
+		"ok":                    {jenny.Files{*jenny.NewFile("a", nil, jenny.Name("t")), *jenny.NewFile("b", nil, jenny.Name("t"))}, false},
+		"duplicate":             {jenny.Files{*jenny.NewFile("a", nil, jenny.Name("t")), *jenny.NewFile("a", nil, jenny.Name("t"))}, true},
+		"case-insensitive dupe": {jenny.Files{*jenny.NewFile("a", nil, jenny.Name("t")), *jenny.NewFile("A", nil, jenny.Name("t"))}, true},
+		"absolute":              {jenny.Files{*jenny.NewFile("/a", nil, jenny.Name("t"))}, true},
+		"nested":                {jenny.Files{*jenny.NewFile("a/b/c.go", nil, jenny.Name("t"))}, false},
+		"parent escape":         {jenny.Files{*jenny.NewFile("../a", nil, jenny.Name("t"))}, true},
+		"inner parent escape":   {jenny.Files{*jenny.NewFile("a/../../b", nil, jenny.Name("t"))}, true},
+		"dot element":           {jenny.Files{*jenny.NewFile("./a", nil, jenny.Name("t"))}, true},
+		"empty element":         {jenny.Files{*jenny.NewFile("a//b", nil, jenny.Name("t"))}, true},
+		"trailing slash":        {jenny.Files{*jenny.NewFile("a/", nil, jenny.Name("t"))}, true},
+		"backslash":             {jenny.Files{*jenny.NewFile(`a\..\..\b`, nil, jenny.Name("t"))}, true},
 		"no From":               {jenny.Files{*jenny.NewFile("a", nil)}, true},
 		"nonexistent":           {jenny.Files{{}}, true},
 	}

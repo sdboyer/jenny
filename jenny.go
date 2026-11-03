@@ -117,6 +117,7 @@ func (j Jenny[I]) With(wrappers ...func(Jenny[I]) Jenny[I]) Jenny[I] {
 // Builder makes jennies that take inputs of type I. Create one with [For].
 type Builder[I Input] struct {
 	inputName func(I) string
+	namespace string
 }
 
 // Option configures a [Builder].
@@ -129,6 +130,15 @@ func InputName[I Input](fn func(I) string) Option[I] {
 	return func(b *Builder[I]) {
 		b.inputName = fn
 	}
+}
+
+// Namespace returns a copy of the Builder whose jennies are attributed to the
+// package with import path pkg, rather than to the package that calls
+// [Builder.New]. It's needed when New can't determine that package correctly,
+// as for an import path whose last element contains a dot.
+func (b Builder[I]) Namespace(pkg string) Builder[I] {
+	b.namespace = pkg
+	return b
 }
 
 // For returns a Builder for jennies that take inputs of type I.
@@ -170,11 +180,21 @@ func (b Builder[I]) each(fn func(I) (Files, error)) func(...I) (Files, error) {
 //
 // The name identifies the jenny in errors and in the [File.From] of every
 // File it generates.
+//
+// New also records the import path of the package that called it, as the
+// jenny's [NamedJenny.JennyPackage]. That tells apart same-named jennies from
+// different packages, for example when one package's pipeline is composed into
+// another's. Funcs marked with [Helper] are skipped when finding the caller,
+// and [Builder.Namespace] sets the package explicitly.
 func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 	if name == "" {
 		panic("jenny: New requires a non-empty name")
 	}
-	nj := namedJenny(name)
+	pkg := b.namespace
+	if pkg == "" {
+		pkg = callerPackage()
+	}
+	nj := namedJenny{name: name, pkg: pkg}
 
 	named := func(fl Files, err error) (Files, error) {
 		if err != nil {
@@ -222,12 +242,3 @@ func single(f *File, err error) (Files, error) {
 	}
 	return Files{*f}, nil
 }
-
-// NamedJenny is a named element of a [File.From] stack.
-type NamedJenny interface {
-	JennyName() string
-}
-
-type namedJenny string
-
-func (n namedJenny) JennyName() string { return string(n) }
