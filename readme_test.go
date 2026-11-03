@@ -3,11 +3,8 @@ package jenny_test
 // The examples in this file are the README walkthrough. Keep them in sync.
 
 import (
-	"context"
 	"fmt"
 	"go/format"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -57,20 +54,6 @@ func goType(r Resource) (jenny.File, error) {
 	}
 	b.WriteString("}\n")
 	return jenny.NewFile(r.Name+".go", []byte(b.String())), nil
-}
-
-func goTypeOwned(r Resource) (jenny.Files, error) {
-	var b strings.Builder
-	fmt.Fprintf(&b, "package api\n\ntype %s struct {\n", title(r.Name))
-	for _, f := range r.Fields {
-		t, ok := goFieldTypes[f.Type]
-		if !ok {
-			return nil, fmt.Errorf("unsupported field type %q", f.Type)
-		}
-		fmt.Fprintf(&b, "\t%s %s\n", title(f.Name), t)
-	}
-	b.WriteString("}\n")
-	return jenny.Files{jenny.NewFile(r.Name+".go", []byte(b.String())), jenny.NewClaim("*.go")}, nil
 }
 
 func routes(rs ...Resource) (jenny.File, error) {
@@ -231,30 +214,4 @@ func Example_readme() {
 	// web/src/api/playlist/v2.ts (TSPaths)
 	// web/src/api/team/index.ts (TSIndex)
 	// web/src/api/team/v1.ts (TSPaths)
-}
-
-func Example_readmeClaim() {
-	gen := jenny.Prefix("pkg/api",
-		api.New("GoTypes", goTypeOwned),
-		api.New("Routes", routes),
-	)
-
-	root, _ := os.MkdirTemp("", "jenny-readme")
-	defer os.RemoveAll(root)
-	ctx := context.Background()
-
-	all, _ := gen.GenerateFS(resources...)
-	_ = all.Write(ctx, root)
-
-	// team is no longer an input.
-	fs, _ := gen.GenerateFS(resources[0])
-	err := fs.Verify(ctx, root)
-	// Verify also reports that routes.go changed; print only stale files.
-	for line := range strings.SplitSeq(filepath.ToSlash(err.Error()), "\n") {
-		if strings.Contains(line, ": stale: ") {
-			fmt.Println(strings.TrimPrefix(line, filepath.ToSlash(root)+"/"))
-		}
-	}
-	// Output:
-	// pkg/api/team.go: stale: matches claim pkg/api/*.go of jenny "GoTypes", but was not generated
 }

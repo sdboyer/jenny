@@ -13,7 +13,7 @@ import (
 // DriftError reports one generated file whose persisted copy is missing or
 // differs from it, as found by [FS.VerifyFS] and [FS.Verify].
 type DriftError struct {
-	// Path is the generated File's RelativePath, which is also its name in
+	// Path is the generated File's [File.Path], which is also its name in
 	// the persisted [io/fs.FS]: slash-separated on every OS.
 	Path string
 
@@ -37,12 +37,11 @@ func (e *DriftError) Error() string {
 // VerifyFS checks the contents of each file against its persisted copy, the
 // file of the same name in persisted. persisted may be any [io/fs.FS], such as
 // a directory through [os.DirFS], an [embed.FS] or a [testing/fstest.MapFS].
-// Files in persisted that the FS doesn't contain are ignored, unless a
-// [Claim] matches them (see [FS.Stale]).
+// Files in persisted that the FS doesn't contain are ignored.
 //
 // If any files are missing or differ, VerifyFS returns a [*DriftError] for
-// each, combined with [errors.Join] in path order and followed by an error
-// for each stale file; use [errors.As] to find them. If reading persisted fails other than by a file not existing,
+// each, combined with [errors.Join] in path order; use [errors.As] to find
+// them. If reading persisted fails other than by a file not existing,
 // VerifyFS returns that error instead, and no DriftErrors.
 //
 // VerifyFS reads persisted from several goroutines at once. It stops early,
@@ -79,16 +78,5 @@ func (fsys *FS) VerifyFS(ctx context.Context, persisted fs.FS) error {
 		return fmt.Errorf("io error while verifying tree: %w", err)
 	}
 
-	stale, err := fsys.stale(ctx, persisted)
-	if err != nil {
-		return fmt.Errorf("io error while verifying tree: %w", err)
-	}
-	all := make([]error, 0, len(diffs)+len(stale))
-	all = append(all, diffs...)
-	for _, s := range stale {
-		all = append(all, fmt.Errorf("%s: stale: matches claim %s of jenny %q, but was not generated",
-			s.path, s.claim.Path(), jennystack(s.claim.from)))
-	}
-
-	return errors.Join(all...)
+	return errors.Join(diffs...)
 }

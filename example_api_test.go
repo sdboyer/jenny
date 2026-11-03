@@ -144,15 +144,11 @@ func ExampleJenny_Map() {
 func ExampleJenny_With() {
 	// A reusable wrapper: route test files into a separate tree.
 	testsApart := func(j jenny.Jenny[string]) jenny.Jenny[string] {
-		return j.Map(func(f jenny.Content) (jenny.Content, error) {
-			if !strings.HasSuffix(f.Path(), "_test.go") {
-				return f, nil
+		return j.Map(func(f jenny.File) (jenny.File, error) {
+			if strings.HasSuffix(f.Path(), "_test.go") {
+				return jenny.Move(f, path.Join("tests", f.Path())), nil
 			}
-			data, err := f.Render()
-			if err != nil {
-				return nil, err
-			}
-			return jenny.NewFile(path.Join("tests", f.Path()), data, f.From()...), nil
+			return f, nil
 		})
 	}
 

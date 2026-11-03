@@ -4,20 +4,24 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"reflect"
 	"strings"
 )
 
-// File is one output of a jenny: either content at a path, which is a
-// [Content] ([Bytes] or [Tree]), or a [Claim] of ownership over the paths
-// matching a pattern.
+// File is a single file, intended to be written or compared against existing
+// files on disk through an [FS]. Its content is held in one of two kinds:
+// [Bytes], made with [NewFile], or [Tree], a value such as a syntax tree that
+// is rendered to bytes only when they're needed.
 //
 // File is sealed: only this package's types implement it. That lets the
-// framework place ([Jenny.Prefix]) and stamp ([Builder.New]) any File without
-// knowing what's in it. [Tree] is generic, so content can still be carried in
-// any representation.
+// framework move ([Jenny.Prefix], [Move]) and stamp ([Builder.New]) any File
+// and keep its kind, so a [TreeMapper] still finds its Tree afterwards. It's
+// also what lets the framework guarantee that a nil pointer is never mistaken
+// for a File: wherever user code hands Files to jenny, a nil *Bytes or
+// *Tree[T] is treated exactly as a nil File.
 type File interface {
 	// Path is the slash-separated path of the File, relative to the output
-	// root. For a Claim, it's the claim's pattern.
+	// root.
 	Path() string
 
 	// From is the stack of named jennies responsible for producing the File,
@@ -27,25 +31,49 @@ type File interface {
 	// FromString joins the names of the jennies in From with colons.
 	FromString() string
 
-	// Validate checks that the File's path (or a Claim's pattern) is clean,
-	// relative and slash-separated, and that the File has at least one jenny
-	// in its From.
+	// Render returns the File's content as bytes.
+	Render() ([]byte, error)
+
+	// Validate checks that the File's path is valid and that it has at least
+	// one jenny in its From. A kind may add rules of its own.
 	Validate() error
 
-	// placed returns a copy of the File beneath dir.
-	placed(dir string) File
+	// withPath returns a copy of the File with its path passed through fn.
+	withPath(fn func(string) string) File
 
 	// stamped returns a copy of the File with nj outermost in its From.
 	stamped(nj NamedJenny) File
 }
 
-// Content is a File with content, which Render returns as bytes. [Bytes] and
-// [Tree] are Contents; a [Claim] is not.
-type Content interface {
-	File
+// normalize returns f as jenny holds Files: nil if f is nil or a nil pointer,
+// and the value a pointer points to otherwise, so that a nil *Bytes is never
+// mistaken for a File, and a *Tree[T] is still found by a TreeMapper. It is
+// applied wherever user code hands Files to jenny.
+func normalize(f File) File {
+	if f == nil {
+		return nil
+	}
+	v := reflect.ValueOf(f)
+	if v.Kind() != reflect.Pointer {
+		return f
+	}
+	if v.IsNil() {
+		return nil
+	}
+	// Every kind implements File with value receivers, so the value a
+	// pointer points to is a File too.
+	return v.Elem().Interface().(File)
+}
 
-	// Render returns the File's content as bytes.
-	Render() ([]byte, error)
+// Move returns a copy of f at path p, with its content, kind and From
+// unchanged. Unlike rebuilding the file with [NewFile], it doesn't render a
+// [Tree]. It returns nil if f is nil.
+func Move(f File, p string) File {
+	f = normalize(f)
+	if f == nil {
+		return nil
+	}
+	return f.withPath(func(string) string { return p })
 }
 
 // meta is the path and provenance every File has.
@@ -60,7 +88,7 @@ func (m meta) From() []NamedJenny { return m.from }
 
 func (m meta) FromString() string { return jennystack(m.from).String() }
 
-// Validate checks that a Content's path is a clean, relative,
+// Validate checks that the File's path is a clean, relative,
 // slash-separated path (per [io/fs.ValidPath]) that means the same thing on
 // every OS, and that it has at least one jenny in its From.
 //
@@ -80,24 +108,25 @@ func (m meta) Validate() error {
 	if err := checkPath(m.path); err != nil {
 		return err
 	}
-	return m.validateFrom()
-}
-
-func (m meta) validateFrom() error {
 	if len(m.from) == 0 {
 		return fmt.Errorf("%s: File must have at least one From jenny", m.path)
 	}
 	return nil
 }
 
-func (m meta) in(dir string) meta {
-	m.path = path.Join(dir, m.path)
+func (m meta) withPath(fn func(string) string) meta {
+	m.path = fn(m.path)
 	return m
 }
 
 func (m meta) by(nj NamedJenny) meta {
 	m.from = append([]NamedJenny{nj}, m.from...)
 	return m
+}
+
+// prefixer returns a func that places a path beneath dir.
+func prefixer(dir string) func(string) string {
+	return func(p string) string { return path.Join(dir, p) }
 }
 
 // NewFile returns a [Bytes] file at path with the given data.
@@ -115,11 +144,11 @@ type Bytes struct {
 // Data returns the file's contents.
 func (b Bytes) Data() []byte { return b.data }
 
-// Render implements [Content]. It returns Data, and never fails.
+// Render implements [File]. It returns Data, and never fails.
 func (b Bytes) Render() ([]byte, error) { return b.data, nil }
 
-func (b Bytes) placed(dir string) File {
-	b.meta = b.meta.in(dir)
+func (b Bytes) withPath(fn func(string) string) File {
+	b.meta = b.meta.withPath(fn)
 	return b
 }
 
@@ -130,33 +159,27 @@ func (b Bytes) stamped(nj NamedJenny) File {
 
 // Files is a set of File objects.
 //
-// A Files is invalid (per [Files.Validate]) if it contains a nil File, a File
-// that doesn't [File.Validate], or more than one [Content] having the same
-// [File.Path] (note: this is case-insensitive). Claims may repeat and
-// overlap.
+// A Files is invalid (per [Files.Validate]) if it contains a nil File
+// (including a nil pointer), a File that doesn't [File.Validate], or more
+// than one File having the same [File.Path] (note: this is case-insensitive).
 //
 // These invariants are internally enforced by FS.
 type Files []File
 
 // Validate checks every File with [File.Validate], and checks that no two
-// Contents have paths that are equal, ignoring case. All problems found are
+// Files have paths that are equal, ignoring case. All problems found are
 // returned together.
 func (fsl Files) Validate() error {
 	var errs []error
 
 	paths := make(map[string][][]NamedJenny)
 	for _, f := range fsl {
-		if f == nil {
+		if normalize(f) == nil {
 			errs = append(errs, errors.New("nil File not allowed within Files slice"))
 			continue
 		}
 		if err := f.Validate(); err != nil {
 			errs = append(errs, err)
-			continue
-		}
-		if _, ok := f.(Claim); ok {
-			// Claims own regions, not paths: they may repeat (a single-input
-			// jenny returns its claim once per input) and overlap.
 			continue
 		}
 		normalizedPath := strings.ToLower(f.Path())

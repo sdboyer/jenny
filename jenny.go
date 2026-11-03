@@ -24,8 +24,10 @@ type Input = any
 // made: one or many inputs in, one or many [File]s out.
 //
 // A generator func returns a nil File or an empty Files to indicate it had
-// nothing to generate for its input(s). Generator funcs do not need to set
-// [File.From]; it is set for them.
+// nothing to generate for its input(s). A nil pointer, such as a nil *Bytes
+// returned as a File, is treated exactly as a nil File, here and wherever else
+// jenny receives Files. Generator funcs do not need to set [File.From]; it is
+// set for them.
 type GenFunc[I Input] interface {
 	func(I) (File, error) | func(I) (Files, error) | func(...I) (File, error) | func(...I) (Files, error)
 }
@@ -76,9 +78,8 @@ func (j Jenny[I]) GenerateFS(in ...I) (*FS, error) {
 	return jfs, nil
 }
 
-// Prefix returns a jenny that places every File the receiver generates under
-// dir: it prepends dir to the path of every [Content], and to the pattern of
-// every [Claim].
+// Prefix returns a jenny that prepends dir to the path of every File the
+// receiver generates.
 func (j Jenny[I]) Prefix(dir string) Jenny[I] {
 	return newJenny(func(in ...I) (Files, error) {
 		fl, err := j.gen(in...)
@@ -87,21 +88,20 @@ func (j Jenny[I]) Prefix(dir string) Jenny[I] {
 		}
 		out := make(Files, len(fl))
 		for i, f := range fl {
-			out[i] = f.placed(dir)
+			out[i] = f.withPath(prefixer(dir))
 		}
 		return out, out.Validate()
 	})
 }
 
-// Map returns a jenny that passes every [Content] the receiver generates
-// through fm. Claims pass through unchanged.
+// Map returns a jenny that passes every File the receiver generates through fm.
 func (j Jenny[I]) Map(fm FileMapper) Jenny[I] {
 	return newJenny(func(in ...I) (Files, error) {
 		fl, err := j.gen(in...)
 		if err != nil {
 			return nil, err
 		}
-		out, err := mapContent(fl, fm)
+		out, err := mapFiles(fl, fm)
 		if err != nil {
 			return nil, err
 		}
@@ -109,19 +109,19 @@ func (j Jenny[I]) Map(fm FileMapper) Jenny[I] {
 	})
 }
 
-func mapContent(fl []File, fm FileMapper) (Files, error) {
-	out := make(Files, 0, len(fl))
-	for _, f := range fl {
-		c, ok := f.(Content)
-		if !ok {
-			out = append(out, f)
-			continue
-		}
-		nf, err := fm(c)
+// mapFiles passes each File through fm. A FileMapper can't drop a file, so a
+// nil File from fm, including a nil pointer, is an error.
+func mapFiles(fl []File, fm FileMapper) (Files, error) {
+	out := make(Files, len(fl))
+	for i, f := range fl {
+		nf, err := fm(f)
 		if err != nil {
 			return nil, fmt.Errorf("postprocessing of %s from %s failed: %w", f.Path(), jennystack(f.From()), err)
 		}
-		out = append(out, nf)
+		if nf = normalize(nf); nf == nil {
+			return nil, fmt.Errorf("postprocessing of %s from %s returned a nil File", f.Path(), jennystack(f.From()))
+		}
+		out[i] = nf
 	}
 	return out, nil
 }
@@ -205,7 +205,9 @@ func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 		// cache), which must not accumulate a stamp per call.
 		out := make(Files, len(fl))
 		for i, f := range fl {
-			if f != nil { // left for Validate to report
+			// This is where Files enter from generator funcs, so it's where a
+			// nil pointer becomes a nil File.
+			if f = normalize(f); f != nil { // a nil is left for Validate to report
 				f = f.stamped(nj)
 			}
 			out[i] = f
@@ -240,7 +242,7 @@ func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 }
 
 func single(f File, err error) (Files, error) {
-	if err != nil || f == nil {
+	if err != nil || normalize(f) == nil {
 		return nil, err
 	}
 	return Files{f}, nil

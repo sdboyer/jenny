@@ -28,15 +28,11 @@ func paths(fl []jenny.File) []string {
 	return out
 }
 
-// contents returns a map of path to rendered content, for every Content.
+// contents returns a map of path to rendered content.
 func contents(fl []jenny.File) map[string]string {
 	out := make(map[string]string, len(fl))
 	for _, f := range fl {
-		c, ok := f.(jenny.Content)
-		if !ok {
-			continue
-		}
-		data, err := c.Render()
+		data, err := f.Render()
 		if err != nil {
 			panic(err)
 		}
@@ -45,8 +41,8 @@ func contents(fl []jenny.File) map[string]string {
 	return out
 }
 
-// describe returns, in order, each File's path, From and rendered content
-// (none for a Claim), for comparing Files that hold unexported fields.
+// describe returns, in order, each File's path, From, kind and rendered
+// content, for comparing Files that hold unexported fields.
 func describe(fl []jenny.File) []string {
 	c := contents(fl)
 	out := make([]string, len(fl))
@@ -245,7 +241,7 @@ func TestWrappersApplyInOrder(t *testing.T) {
 
 func TestMapError(t *testing.T) {
 	boom := errors.New("boom")
-	j := ty.New("O2O", o2o).Map(func(jenny.Content) (jenny.Content, error) { return nil, boom })
+	j := ty.New("O2O", o2o).Map(func(jenny.File) (jenny.File, error) { return nil, boom })
 	if _, err := j.Generate(ab...); !errors.Is(err, boom) {
 		t.Errorf("expected wrapped boom, got %v", err)
 	}

@@ -62,7 +62,6 @@ func TestTreeMapper(t *testing.T) {
 			jenny.NewTree(t.Name+".words", words{"hi", t.Name}, renderWords),
 			jenny.NewTree(t.Name+".num", 42, func(n int) ([]byte, error) { return []byte("n"), nil }),
 			jenny.NewFile(t.Name+".bytes", []byte("bytes")),
-			jenny.NewClaim("*.words"),
 		}, nil
 	})
 
@@ -71,7 +70,6 @@ func TestTreeMapper(t *testing.T) {
 		`a.words (Mixed) jenny.Tree[github.com/sdboyer/jenny_test.words] "HI A"`,
 		`a.num (Mixed) jenny.Tree[int] "n"`,
 		`a.bytes (Mixed) jenny.Bytes "bytes"`,
-		`*.words (Mixed) jenny.Claim ""`,
 	}
 	if diff := cmp.Diff(want, describe(fl)); diff != "" {
 		t.Errorf("(-want +got):\n%s", diff)
@@ -105,5 +103,33 @@ func TestTreeErrors(t *testing.T) {
 	})
 	if _, err := noRender.Generate(ab[0]); err == nil {
 		t.Error("expected error for a Tree with no render func")
+	}
+}
+
+func TestMove(t *testing.T) {
+	renders := 0
+	render := func(w words) ([]byte, error) {
+		renders++
+		return renderWords(w)
+	}
+	moveTests := jenny.FileMapper(func(f jenny.File) (jenny.File, error) {
+		return jenny.Move(f, "tests/"+f.Path()), nil
+	})
+	j := ty.New("Words", func(t Type) (jenny.File, error) {
+		return jenny.NewTree(t.Name+".txt", words{t.Name}, render), nil
+	}).Map(moveTests).Prefix("out")
+
+	fl := mustGen(t, j, ab[0])
+	if renders != 0 {
+		t.Errorf("Move rendered the Tree %d times", renders)
+	}
+	if _, ok := fl[0].(jenny.Tree[words]); !ok || fl[0].Path() != "out/tests/a.txt" || fl[0].FromString() != "Words" {
+		t.Errorf("got %s (%s) %T, want out/tests/a.txt (Words) as a Tree", fl[0].Path(), fl[0].FromString(), fl[0])
+	}
+
+	// Moved paths are validated like any other.
+	bad := ty.New("O2O", o2o).Map(func(f jenny.File) (jenny.File, error) { return jenny.Move(f, "../x"), nil })
+	if _, err := bad.Generate(ab[0]); err == nil {
+		t.Error("expected error for a File moved outside the root")
 	}
 }
