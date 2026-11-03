@@ -28,9 +28,6 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12.2
-          # Release binaries are built with go1.26, which refuses go1.27 modules.
+          version: v2.15.0
+          # Release binaries may be built with an older Go, which refuses go1.27 modules.
           install-mode: goinstall
-          # Warm-cache runs fail to import export data for packages with
-          # generic methods (Go 1.27): "internal error in importing ... (assertion failed)".
-          skip-cache: true
