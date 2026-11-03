@@ -2,6 +2,7 @@ package jenny_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -18,20 +19,39 @@ type Type struct {
 	Name string
 }
 
-// paths returns the RelativePath of each File, in order.
-func paths(fl jenny.Files) []string {
+// paths returns the Path of each File, in order.
+func paths(fl []jenny.File) []string {
 	out := make([]string, len(fl))
 	for i, f := range fl {
-		out[i] = f.RelativePath
+		out[i] = f.Path()
 	}
 	return out
 }
 
-// contents returns a map of RelativePath to Data.
-func contents(fl jenny.Files) map[string]string {
+// contents returns a map of path to rendered content, for every Content.
+func contents(fl []jenny.File) map[string]string {
 	out := make(map[string]string, len(fl))
 	for _, f := range fl {
-		out[f.RelativePath] = string(f.Data)
+		c, ok := f.(jenny.Content)
+		if !ok {
+			continue
+		}
+		data, err := c.Render()
+		if err != nil {
+			panic(err)
+		}
+		out[f.Path()] = string(data)
+	}
+	return out
+}
+
+// describe returns, in order, each File's path, From and rendered content
+// (none for a Claim), for comparing Files that hold unexported fields.
+func describe(fl []jenny.File) []string {
+	c := contents(fl)
+	out := make([]string, len(fl))
+	for i, f := range fl {
+		out[i] = fmt.Sprintf("%s (%s) %T %q", f.Path(), f.FromString(), f, c[f.Path()])
 	}
 	return out
 }
@@ -47,18 +67,18 @@ func mustGen[I any](t *testing.T, j jenny.Jenny[I], in ...I) jenny.Files {
 
 var ty = jenny.For[Type](jenny.InputName(func(t Type) string { return t.Name }))
 
-func o2o(t Type) (*jenny.File, error) {
+func o2o(t Type) (jenny.File, error) {
 	return jenny.NewFile(t.Name+".o2o", []byte(t.Name)), nil
 }
 
 func o2m(t Type) (jenny.Files, error) {
 	return jenny.Files{
-		*jenny.NewFile(t.Name+".o2m.1", []byte(t.Name)),
-		*jenny.NewFile(t.Name+".o2m.2", []byte(t.Name)),
+		jenny.NewFile(t.Name+".o2m.1", []byte(t.Name)),
+		jenny.NewFile(t.Name+".o2m.2", []byte(t.Name)),
 	}, nil
 }
 
-func m2o(ts ...Type) (*jenny.File, error) {
+func m2o(ts ...Type) (jenny.File, error) {
 	names := make([]string, len(ts))
 	for i, t := range ts {
 		names[i] = t.Name
@@ -69,7 +89,7 @@ func m2o(ts ...Type) (*jenny.File, error) {
 func m2m(ts ...Type) (jenny.Files, error) {
 	fl := make(jenny.Files, 0, len(ts))
 	for _, t := range ts {
-		fl = append(fl, *jenny.NewFile(t.Name+".m2m", []byte(t.Name)))
+		fl = append(fl, jenny.NewFile(t.Name+".m2m", []byte(t.Name)))
 	}
 	return fl, nil
 }
@@ -94,7 +114,7 @@ func TestNewArities(t *testing.T) {
 			}
 			for _, f := range fl {
 				if got := f.FromString(); got != strings.ToUpper(name) {
-					t.Errorf("%s: From is %q, want %q", f.RelativePath, got, strings.ToUpper(name))
+					t.Errorf("%s: From is %q, want %q", f.Path(), got, strings.ToUpper(name))
 				}
 			}
 		})
@@ -107,10 +127,9 @@ func TestNewArities(t *testing.T) {
 
 func TestNewEmptyOutputs(t *testing.T) {
 	tests := map[string]jenny.Jenny[Type]{
-		"nil File":     ty.New("x", func(Type) (*jenny.File, error) { return nil, nil }),
-		"zero File":    ty.New("x", func(Type) (*jenny.File, error) { return &jenny.File{}, nil }),
+		"nil File":     ty.New("x", func(Type) (jenny.File, error) { return nil, nil }),
 		"nil Files":    ty.New("x", func(Type) (jenny.Files, error) { return nil, nil }),
-		"m2o nil File": ty.New("x", func(...Type) (*jenny.File, error) { return nil, nil }),
+		"m2o nil File": ty.New("x", func(...Type) (jenny.File, error) { return nil, nil }),
 	}
 	for name, j := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -123,7 +142,7 @@ func TestNewEmptyOutputs(t *testing.T) {
 
 func TestNoInputsNoCall(t *testing.T) {
 	called := false
-	j := ty.New("M2O", func(...Type) (*jenny.File, error) {
+	j := ty.New("M2O", func(...Type) (jenny.File, error) {
 		called = true
 		return nil, nil
 	})
@@ -151,7 +170,7 @@ func TestNewEmptyNamePanics(t *testing.T) {
 
 func TestNewErrors(t *testing.T) {
 	boom := errors.New("boom")
-	j := ty.New("Fails", func(t Type) (*jenny.File, error) {
+	j := ty.New("Fails", func(t Type) (jenny.File, error) {
 		if t.Name == "b" {
 			return nil, boom
 		}
@@ -166,23 +185,32 @@ func TestNewErrors(t *testing.T) {
 	}
 
 	// Without InputName, errors aren't labeled with an input.
-	_, err = jenny.For[Type]().New("Fails", func(Type) (*jenny.File, error) { return nil, boom }).Generate(ab[0])
+	_, err = jenny.For[Type]().New("Fails", func(Type) (jenny.File, error) { return nil, boom }).Generate(ab[0])
 	if want := "Fails: boom"; err == nil || err.Error() != want {
 		t.Errorf("error is %v, want %q", err, want)
 	}
 }
 
 func TestNewInvalidFiles(t *testing.T) {
-	j := ty.New("Dupes", func(...Type) (jenny.Files, error) {
-		return jenny.Files{*jenny.NewFile("x", nil), *jenny.NewFile("X", nil)}, nil
-	})
-	if _, err := j.Generate(ab...); err == nil {
-		t.Error("expected error for case-insensitive duplicate paths")
+	tests := map[string]jenny.Jenny[Type]{
+		"case-insensitive duplicate paths": ty.New("Dupes", func(...Type) (jenny.Files, error) {
+			return jenny.Files{jenny.NewFile("x", nil), jenny.NewFile("X", nil)}, nil
+		}),
+		// nil is the only "nothing generated"; an empty path is a mistake.
+		"zero Bytes":   ty.New("x", func(Type) (jenny.File, error) { return jenny.Bytes{}, nil }),
+		"nil in Files": ty.New("x", func(Type) (jenny.Files, error) { return jenny.Files{nil}, nil }),
+	}
+	for name, j := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := j.Generate(ab...); err == nil {
+				t.Error("expected error")
+			}
+		})
 	}
 }
 
 func TestNewDoesNotMutateGenOutput(t *testing.T) {
-	cached := jenny.Files{*jenny.NewFile("a", nil)}
+	cached := jenny.Files{jenny.NewFile("a", nil)}
 	j := ty.New("Cached", func(Type) (jenny.Files, error) { return cached, nil })
 	for range 3 {
 		fl := mustGen(t, j, ab[0])
@@ -190,17 +218,16 @@ func TestNewDoesNotMutateGenOutput(t *testing.T) {
 			t.Fatalf("From is %q, want %q", got, "Cached")
 		}
 	}
-	if len(cached[0].From) != 0 {
+	if len(cached[0].From()) != 0 {
 		t.Errorf("gen func's returned Files were mutated: From is %q", cached[0].FromString())
 	}
 }
 
 func TestWrappersApplyInOrder(t *testing.T) {
 	suffix := func(s string) jenny.FileMapper {
-		return func(f jenny.File) (jenny.File, error) {
-			f.Data = append(append([]byte{}, f.Data...), s...)
-			return f, nil
-		}
+		return jenny.BytesMapper(func(_ jenny.File, data []byte) ([]byte, error) {
+			return append(append([]byte{}, data...), s...), nil
+		})
 	}
 	userWrap := func(j jenny.Jenny[Type]) jenny.Jenny[Type] { return j.Prefix("user") }
 
@@ -218,7 +245,7 @@ func TestWrappersApplyInOrder(t *testing.T) {
 
 func TestMapError(t *testing.T) {
 	boom := errors.New("boom")
-	j := ty.New("O2O", o2o).Map(func(jenny.File) (jenny.File, error) { return jenny.File{}, boom })
+	j := ty.New("O2O", o2o).Map(func(jenny.Content) (jenny.Content, error) { return nil, boom })
 	if _, err := j.Generate(ab...); !errors.Is(err, boom) {
 		t.Errorf("expected wrapped boom, got %v", err)
 	}

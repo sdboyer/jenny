@@ -36,7 +36,7 @@ var resources = []Resource{
 Here's one that makes a Go struct for a resource:
 
 ```go
-func goType(r Resource) (*jenny.File, error) {
+func goType(r Resource) (jenny.File, error) {
     var b strings.Builder
     fmt.Fprintf(&b, "package api\n\ntype %s struct {\n", title(r.Name))
     for _, f := range r.Fields {
@@ -51,7 +51,7 @@ func goType(r Resource) (*jenny.File, error) {
 }
 ```
 
-It handles one resource and knows nothing about the framework, apart from returning a `*jenny.File`. Naming it makes it a jenny:
+It handles one resource and knows nothing about the framework, apart from returning a `jenny.File`. `jenny.NewFile` makes a file from bytes. Naming it makes it a jenny:
 
 ```go
 api := jenny.For[Resource](jenny.InputName(func(r Resource) string { return r.Name }))
@@ -75,7 +75,7 @@ GoTypes: unsupported field type "decimal" for input "invoice"
 A route table covers all resources, so its func takes all of them:
 
 ```go
-func routes(rs ...Resource) (*jenny.File, error)
+func routes(rs ...Resource) (jenny.File, error)
 
 api.New("Routes", routes)
 ```
@@ -142,7 +142,7 @@ type Playlist struct {
 }
 ```
 
-`gofmt` and `header` are `FileMapper`s, which are plain `func(jenny.File) (jenny.File, error)`. `header` builds its comment from `File.From`, so one mapper puts the right generator name on every file. `.Prefix` and `.Map` decorate a single jenny, applied left to right. `jenny.Prefix` and `jenny.Map` decorate a group of them. For decorators of your own, use `.With(func(jenny.Jenny[I]) jenny.Jenny[I])`.
+`gofmt` and `header` are `FileMapper`s. Both are made by `jenny.BytesMapper` from a plain `func(jenny.File, []byte) ([]byte, error)`, which gets each file's content and returns the new content. `header` builds its comment from `File.From`, so one mapper puts the right generator name on every file. (A file can also be carried as a syntax tree, a `jenny.Tree`, which `jenny.TreeMapper`s work on directly. See `ExampleTreeMapper`.) `.Prefix` and `.Map` decorate a single jenny, applied left to right. `jenny.Prefix` and `jenny.Map` decorate a group of them. For decorators of your own, use `.With(func(jenny.Jenny[I]) jenny.Jenny[I])`.
 
 ### 5. Adapt converts inputs for a subtree
 
@@ -154,8 +154,8 @@ type Version struct {
     N        int
 }
 
-func tsPaths(v Version) (*jenny.File, error)     // playlist/v1.ts
-func tsIndex(vs ...Version) (*jenny.File, error) // playlist/index.ts
+func tsPaths(v Version) (jenny.File, error)     // playlist/v1.ts
+func tsIndex(vs ...Version) (jenny.File, error) // playlist/index.ts
 ```
 
 `Adapt` takes a func that converts inputs, then runs a pipeline of jennies over what it returns:
@@ -217,10 +217,31 @@ if err != nil {
     return err
 }
 if os.Getenv("CODEGEN_VERIFY") != "" {
-    return fs.Verify(ctx, root) // reports files that are missing or differ
+    return fs.Verify(ctx, root) // reports files that are missing, differ, or are stale
 }
 return fs.Write(ctx, root)
 ```
+
+### 7. Claim the files you own
+
+Remove `team` from the inputs, and `pkg/api/team.go` stays on disk. Verify can't tell it's stale: nothing generated it this run, and nothing says it was ever generated. A jenny says which files are its own by returning a claim among its files:
+
+```go
+func goTypeOwned(r Resource) (jenny.Files, error) {
+    // ...builds the struct, as goType does
+    return jenny.Files{jenny.NewFile(r.Name+".go", []byte(b.String())), jenny.NewClaim("*.go")}, nil
+}
+
+jenny.Prefix("pkg/api",
+    api.New("GoTypes", goTypeOwned),
+    api.New("Routes", routes),
+)
+```
+```
+pkg/api/team.go: stale: matches claim pkg/api/*.go of jenny "GoTypes", but was not generated
+```
+
+A claim's pattern is relative to the jenny's own output, so `Prefix` places it the same way it places the jenny's files: `*.go` becomes `pkg/api/*.go`. `Verify` reports every file on disk that a claim matches but no jenny generated. `routes.go` is inside the claim, but `Routes` generated it, so it's not stale. `Write` never deletes anything; `fs.Stale` lists stale files, if you want to remove them.
 
 ## Origins
 

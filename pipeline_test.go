@@ -21,7 +21,7 @@ func TestPipeline(t *testing.T) {
 }
 
 func TestPipelineCollisions(t *testing.T) {
-	upper := func(t Type) (*jenny.File, error) { return jenny.NewFile("A.o2o", nil), nil }
+	upper := func(t Type) (jenny.File, error) { return jenny.NewFile("A.o2o", nil), nil }
 	tests := map[string]jenny.Jenny[Type]{
 		"exact":            jenny.Pipeline(ty.New("One", o2o), ty.New("Two", o2o)),
 		"case-insensitive": jenny.Pipeline(ty.New("One", o2o), ty.New("Upper", upper)),
@@ -38,8 +38,8 @@ func TestPipelineCollisions(t *testing.T) {
 func TestPipelineCollectsAllErrors(t *testing.T) {
 	e1, e2 := errors.New("e1"), errors.New("e2")
 	j := jenny.Pipeline(
-		ty.New("One", func(Type) (*jenny.File, error) { return nil, e1 }),
-		ty.New("Two", func(...Type) (*jenny.File, error) { return nil, e2 }),
+		ty.New("One", func(Type) (jenny.File, error) { return nil, e1 }),
+		ty.New("Two", func(...Type) (jenny.File, error) { return nil, e2 }),
 	)
 	_, err := j.Generate(ab...)
 	if !errors.Is(err, e1) || !errors.Is(err, e2) {
@@ -48,10 +48,9 @@ func TestPipelineCollectsAllErrors(t *testing.T) {
 }
 
 func TestGroupForms(t *testing.T) {
-	header := func(f jenny.File) (jenny.File, error) {
-		f.Data = append([]byte("// gen\n"), f.Data...)
-		return f, nil
-	}
+	header := jenny.BytesMapper(func(_ jenny.File, data []byte) ([]byte, error) {
+		return append([]byte("// gen\n"), data...), nil
+	})
 	tests := map[string]struct {
 		group, chained jenny.Jenny[Type]
 	}{

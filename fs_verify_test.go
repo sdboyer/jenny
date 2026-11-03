@@ -15,7 +15,7 @@ import (
 func TestVerifyErrorOrderIsDeterministic(t *testing.T) {
 	fl := make([]jenny.File, 100)
 	for i := range fl {
-		fl[i] = *jenny.NewFile(fmt.Sprintf("f%03d", i), []byte("x"), src("test"))
+		fl[i] = jenny.NewFile(fmt.Sprintf("f%03d", i), []byte("x"), src("test"))
 	}
 	jfs := fsWith(t, fl...)
 	dir := t.TempDir()
@@ -37,7 +37,7 @@ func TestVerifyErrorOrderIsDeterministic(t *testing.T) {
 }
 
 func TestWriteVerifyHonorContext(t *testing.T) {
-	jfs := fsWith(t, *jenny.NewFile("a", []byte("a"), src("test")), *jenny.NewFile("b", []byte("b"), src("test")))
+	jfs := fsWith(t, jenny.NewFile("a", []byte("a"), src("test")), jenny.NewFile("b", []byte("b"), src("test")))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	dir := t.TempDir()

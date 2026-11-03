@@ -30,14 +30,20 @@
 // A generator func takes one or many inputs and produces one or many files
 // ([File]). Any of the four shapes in [GenFunc] will do:
 //
-//	func(I) (*File, error)    // one input, one file
+//	func(I) (File, error)     // one input, one file
 //	func(I) (Files, error)    // one input, many files
-//	func(...I) (*File, error) // many inputs, one file
+//	func(...I) (File, error)  // many inputs, one file
 //	func(...I) (Files, error) // many inputs, many files
 //
-// Returning nil (or a File that doesn't [File.Exists], or an empty Files)
-// means "nothing to generate for this input". Single-input funcs are called
-// once per input; many-input funcs are called once with all inputs.
+// Returning a nil File or an empty Files means "nothing to generate for this
+// input". Single-input funcs are called once per input; many-input funcs are
+// called once with all inputs.
+//
+// A File is one of three kinds. [Bytes], made with [NewFile], is content as
+// bytes. [Tree] is content as a value, such as a syntax tree, rendered to
+// bytes only when needed. [Claim] is not content: it claims ownership of the
+// paths matching a pattern, so that files left behind on disk can be found
+// (see [FS.Stale]).
 //
 // [Builder.New] turns a generator func into a [Jenny], which is a generator
 // func with a name. Every jenny has the same type regardless of the shape of
@@ -62,8 +68,9 @@
 // Methods decorate a single jenny, applied left to right in the order they
 // read:
 //
-//   - [Jenny.Prefix] places its files under a directory.
+//   - [Jenny.Prefix] places its files, and its claims, under a directory.
 //   - [Jenny.Map] passes its files through a [FileMapper], e.g. to add a header.
+//     [BytesMapper] and [TreeMapper] make FileMappers.
 //   - [Jenny.With] applies wrappers defined outside this package.
 //
 // The functions [Prefix] and [Map] do the same for a group of jennies.
@@ -79,7 +86,7 @@
 //		group.New("GroupDocs", genGroupDocs).Prefix("docs"),
 //		group.Adapt(splitGroup, // func(Group) ([]Type, error)
 //			typ.New("GoTypes", genGoTypes).Prefix("go"),
-//			typ.New("TypeIndex", genTypeIndex), // func(...Type) (*File, error)
+//			typ.New("TypeIndex", genTypeIndex), // func(...Type) (File, error)
 //		),
 //	)
 //
@@ -87,8 +94,9 @@
 //
 // [Jenny.GenerateFS] runs a jenny and collects its output into an [FS], which
 // can [FS.Write] the files beneath a directory, or [FS.Verify] that the files
-// beneath a directory match. Generators conventionally do the latter in CI,
-// so that checked-in generated code can't drift from its inputs.
+// beneath a directory match, and that no file a [Claim] matches is stale.
+// Generators conventionally do the latter in CI, so that checked-in generated
+// code can't drift from its inputs.
 //
 // Jenny is the successor to github.com/grafana/codejen.
 package jenny

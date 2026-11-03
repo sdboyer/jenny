@@ -21,7 +21,7 @@ func TestAdaptArities(t *testing.T) {
 	// Each adapter is paired with an identical subtree containing a many-input
 	// jenny, whose output reveals how many times the subtree ran and with
 	// which inputs.
-	index := func(ts ...Type) (*jenny.File, error) {
+	index := func(ts ...Type) (jenny.File, error) {
 		names := make([]string, len(ts))
 		for i, t := range ts {
 			names[i] = t.Name
@@ -68,7 +68,7 @@ func TestAdaptSubtreeIsNotSpecial(t *testing.T) {
 	sub := jenny.Pipeline(ty.New("O2O", o2o), ty.New("M2O", m2o).Prefix("idx"))
 	direct := mustGen(t, sub, groups[0].Types...)
 	adapted := mustGen(t, gr.Adapt(func(g Group) ([]Type, error) { return g.Types, nil }, sub), groups[0])
-	if diff := cmp.Diff(direct, adapted); diff != "" {
+	if diff := cmp.Diff(describe(direct), describe(adapted)); diff != "" {
 		t.Errorf("(-direct +adapted):\n%s", diff)
 	}
 }
@@ -78,7 +78,7 @@ func TestAdaptDropsNil(t *testing.T) {
 
 	t.Run("pointer", func(t *testing.T) {
 		b := jenny.For[*Type]()
-		gen := b.New("P", func(t *Type) (*jenny.File, error) { return jenny.NewFile(t.Name, nil), nil })
+		gen := b.New("P", func(t *Type) (jenny.File, error) { return jenny.NewFile(t.Name, nil), nil })
 		// nil first, to make sure nilability isn't decided by the first value
 		j := gr.Adapt(func(g Group) ([]*Type, error) { return []*Type{nil, &g.Types[0], nil}, nil }, gen)
 		if diff := cmp.Diff([]string{"a", "c"}, paths(mustGen(t, j, groups...))); diff != "" {
@@ -88,7 +88,7 @@ func TestAdaptDropsNil(t *testing.T) {
 
 	t.Run("interface", func(t *testing.T) {
 		b := jenny.For[stringer]()
-		gen := b.New("I", func(s stringer) (*jenny.File, error) { return jenny.NewFile(s.String(), nil), nil })
+		gen := b.New("I", func(s stringer) (jenny.File, error) { return jenny.NewFile(s.String(), nil), nil })
 		j := gr.Adapt(func(g Group) (stringer, error) {
 			if g.Name == "g1" {
 				return nil, nil
@@ -101,7 +101,7 @@ func TestAdaptDropsNil(t *testing.T) {
 	})
 
 	t.Run("non-nilable kept", func(t *testing.T) {
-		j := gr.Adapt(func(Group) (Type, error) { return Type{}, nil }, ty.New("Z", func(...Type) (*jenny.File, error) {
+		j := gr.Adapt(func(Group) (Type, error) { return Type{}, nil }, ty.New("Z", func(...Type) (jenny.File, error) {
 			return jenny.NewFile("zero", nil), nil
 		}))
 		if diff := cmp.Diff([]string{"zero"}, paths(mustGen(t, j, groups[0]))); diff != "" {
@@ -111,7 +111,7 @@ func TestAdaptDropsNil(t *testing.T) {
 
 	t.Run("all dropped means subtree does not run", func(t *testing.T) {
 		called := false
-		j := gr.Adapt(func(Group) (*Type, error) { return nil, nil }, jenny.For[*Type]().New("M", func(...*Type) (*jenny.File, error) {
+		j := gr.Adapt(func(Group) (*Type, error) { return nil, nil }, jenny.For[*Type]().New("M", func(...*Type) (jenny.File, error) {
 			called = true
 			return nil, nil
 		}))
@@ -145,7 +145,7 @@ func TestAdaptErrors(t *testing.T) {
 
 	// Errors from within the subtree carry both inner and outer input names.
 	j = gr.Adapt(func(g Group) ([]Type, error) { return g.Types, nil },
-		ty.New("Fails", func(t Type) (*jenny.File, error) {
+		ty.New("Fails", func(t Type) (jenny.File, error) {
 			if t.Name == "c" {
 				return nil, boom
 			}
@@ -162,11 +162,11 @@ func TestNestedAdapt(t *testing.T) {
 	fi := jenny.For[Field]()
 
 	j := jenny.Prefix("out",
-		gr.New("GroupDoc", func(g Group) (*jenny.File, error) { return jenny.NewFile(g.Name+".md", nil), nil }),
+		gr.New("GroupDoc", func(g Group) (jenny.File, error) { return jenny.NewFile(g.Name+".md", nil), nil }),
 		gr.Adapt(func(g Group) ([]Type, error) { return g.Types, nil },
-			ty.New("TypeDoc", func(t Type) (*jenny.File, error) { return jenny.NewFile(t.Name+".md", nil), nil }).Prefix("types"),
+			ty.New("TypeDoc", func(t Type) (jenny.File, error) { return jenny.NewFile(t.Name+".md", nil), nil }).Prefix("types"),
 			ty.Adapt(func(t Type) ([]Field, error) { return []Field{{Name: t.Name + "1"}, {Name: t.Name + "2"}}, nil },
-				fi.New("FieldDoc", func(f Field) (*jenny.File, error) { return jenny.NewFile(f.Name+".md", nil), nil }),
+				fi.New("FieldDoc", func(f Field) (jenny.File, error) { return jenny.NewFile(f.Name+".md", nil), nil }),
 			).Prefix("fields"),
 		),
 	)
@@ -184,9 +184,9 @@ func TestNestedAdapt(t *testing.T) {
 		t.Errorf("(-want +got):\n%s", diff)
 	}
 	for _, f := range fl {
-		want := map[string]string{"out/g": "GroupDoc", "out/t": "TypeDoc", "out/f": "FieldDoc"}[f.RelativePath[:5]]
+		want := map[string]string{"out/g": "GroupDoc", "out/t": "TypeDoc", "out/f": "FieldDoc"}[f.Path()[:5]]
 		if got := f.FromString(); got != want {
-			t.Errorf("%s: From is %q, want %q", f.RelativePath, got, want)
+			t.Errorf("%s: From is %q, want %q", f.Path(), got, want)
 		}
 	}
 }
@@ -196,11 +196,11 @@ func Example_adapt() {
 	ty := jenny.For[Type]()
 
 	gen := jenny.Pipeline(
-		gr.New("GroupDocs", func(g Group) (*jenny.File, error) {
+		gr.New("GroupDocs", func(g Group) (jenny.File, error) {
 			return jenny.NewFile(g.Name+".md", []byte("# "+g.Name)), nil
 		}).Prefix("docs"),
 		gr.Adapt(func(g Group) ([]Type, error) { return g.Types, nil },
-			ty.New("GoTypes", func(t Type) (*jenny.File, error) {
+			ty.New("GoTypes", func(t Type) (jenny.File, error) {
 				return jenny.NewFile(t.Name+".go", []byte("type "+t.Name+" struct{}")), nil
 			}).Prefix("go"),
 		),
@@ -211,7 +211,7 @@ func Example_adapt() {
 		panic(err)
 	}
 	for _, f := range fs.AsFiles() {
-		fmt.Printf("%s (%s)\n", f.RelativePath, f.FromString())
+		fmt.Printf("%s (%s)\n", f.Path(), f.FromString())
 	}
 	// Output:
 	// docs/g1.md (GroupDocs)
