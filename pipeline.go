@@ -7,8 +7,13 @@ import "errors"
 //
 // The Files from all the jennies share one relative path namespace. Pipeline
 // does not modify paths, and it is an error for two Files to have the same
-// path (per [Files.Validate]).
+// path (per [Files.Validate]). The pipeline has the claims of all the
+// jennies.
 func Pipeline[I Input](js ...Jenny[I]) Jenny[I] {
+	var claims []Claim
+	for _, j := range js {
+		claims = append(claims, j.claims...)
+	}
 	return newJenny(func(in ...I) (Files, error) {
 		var (
 			all  Files
@@ -26,7 +31,7 @@ func Pipeline[I Input](js ...Jenny[I]) Jenny[I] {
 			return nil, errors.Join(errs...)
 		}
 		return all, all.Validate()
-	})
+	}, claims)
 }
 
 // Prefix returns a [Pipeline] of the provided jennies, with dir prepended to

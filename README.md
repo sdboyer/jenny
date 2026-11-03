@@ -217,10 +217,26 @@ if err != nil {
     return err
 }
 if os.Getenv("CODEGEN_VERIFY") != "" {
-    return fs.Verify(ctx, root) // reports files that are missing or differ
+    return fs.Verify(ctx, root) // reports files that are missing, differ, or are stale
 }
 return fs.Write(ctx, root)
 ```
+
+### 7. Claim the files you own
+
+Remove `team` from the inputs, and `pkg/api/team.go` stays on disk. Verify can't tell it's stale: nothing generated it this run, and nothing says it was ever generated. A jenny says which files are its own when it's made:
+
+```go
+jenny.Prefix("pkg/api",
+    api.New("GoTypes", goType, jenny.Owns("*.go")),
+    api.New("Routes", routes),
+)
+```
+```
+pkg/api/team.go: stale: matches claim pkg/api/*.go of jenny "GoTypes", but was not generated
+```
+
+A claim's pattern is relative to the jenny's own output, so `Prefix` places it the same way it places the jenny's files: `*.go` becomes `pkg/api/*.go`. `Verify` reports every file on disk that a claim matches but no jenny generated. `routes.go` is inside the claim, but `Routes` generated it, so it's not stale. A claim belongs to the jenny, not to what it generates, so it holds even in a run with no inputs at all. `Write` never deletes anything; `fs.Stale` lists stale files, if you want to remove them.
 
 ## Origins
 

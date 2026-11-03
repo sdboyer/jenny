@@ -43,6 +43,9 @@
 // [NewFile], or [Tree], a value such as a syntax tree, rendered to bytes only
 // when needed.
 //
+// A jenny can also declare, with [Owns], that it owns the files matching a
+// pattern, so that files it no longer generates are found (see [Claim]).
+//
 // [Builder.New] turns a generator func into a [Jenny], which is a generator
 // func with a name. Every jenny has the same type regardless of the shape of
 // the func it was made from, so everything that works with jennies is written
@@ -66,7 +69,7 @@
 // Methods decorate a single jenny, applied left to right in the order they
 // read:
 //
-//   - [Jenny.Prefix] places its files under a directory.
+//   - [Jenny.Prefix] places its files, and its claims, under a directory.
 //   - [Jenny.Map] passes its files through a [FileMapper], e.g. to add a header.
 //     [BytesMapper] and [TreeMapper] make FileMappers.
 //   - [Jenny.With] applies wrappers defined outside this package.
@@ -95,7 +98,8 @@
 // beneath a directory match. Generators conventionally do the latter in CI,
 // so that checked-in generated code can't drift from its inputs.
 // [FS.VerifyFS] checks against any [io/fs.FS] instead, and both report each
-// file that drifted as a [DriftError].
+// file that drifted as a [DriftError], and each stale file a [Claim] matches
+// as a [StaleError].
 //
 // Jenny is the successor to github.com/grafana/codejen.
 package jenny

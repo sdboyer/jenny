@@ -21,7 +21,8 @@ type AdaptFunc[P, A Input] interface {
 // once over all the As.
 //
 // If A is a nilable type, nil As are dropped, so fn can also act as a filter.
-// If fn produces no As, the pipeline does not run.
+// If fn produces no As, the pipeline does not run. The returned jenny has the
+// claims of the pipeline's jennies whether it runs or not.
 func (b Builder[P]) Adapt[A Input, F AdaptFunc[P, A]](fn F, js ...Jenny[A]) Jenny[P] {
 	sub := Pipeline(js...)
 	drop := dropNil[A]()
@@ -53,7 +54,7 @@ func (b Builder[P]) Adapt[A Input, F AdaptFunc[P, A]](fn F, js ...Jenny[A]) Jenn
 		panic(fmt.Sprintf("unreachable: %T is not an AdaptFunc", fn))
 	}
 
-	return newJenny(run)
+	return newJenny(run, sub.claims)
 }
 
 // dropNil returns a func that removes nil values from a slice of A, or that
