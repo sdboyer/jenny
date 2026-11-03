@@ -41,15 +41,19 @@ type GenFunc[I Input] interface {
 // arity of the GenFunc it was made from, every Jenny is used the same way.
 //
 // A Jenny is never invoked with zero inputs; it generates nothing instead.
+// Its [Claim]s don't depend on its inputs, so it has them even then.
 //
-// The zero value of Jenny generates nothing.
+// The zero value of Jenny generates nothing, and claims nothing.
 type Jenny[I Input] struct {
 	run func(in ...I) (Files, error)
+
+	// claims are the jenny's claims, placed as its files are.
+	claims []Claim
 }
 
 // newJenny is the only place a Jenny is constructed.
-func newJenny[I Input](run func(in ...I) (Files, error)) Jenny[I] {
-	return Jenny[I]{run: run}
+func newJenny[I Input](run func(in ...I) (Files, error), claims []Claim) Jenny[I] {
+	return Jenny[I]{run: run, claims: claims}
 }
 
 func (j Jenny[I]) gen(in ...I) (Files, error) {
@@ -65,7 +69,8 @@ func (j Jenny[I]) Generate(in ...I) (Files, error) {
 	return j.gen(in...)
 }
 
-// GenerateFS is like [Jenny.Generate], but returns the results as an [FS].
+// GenerateFS is like [Jenny.Generate], but returns the results as an [FS],
+// which also holds the jenny's [Jenny.Claims].
 func (j Jenny[I]) GenerateFS(in ...I) (*FS, error) {
 	fl, err := j.gen(in...)
 	if err != nil {
@@ -75,12 +80,25 @@ func (j Jenny[I]) GenerateFS(in ...I) (*FS, error) {
 	if err := jfs.Add(fl...); err != nil {
 		return nil, err
 	}
+	if err := jfs.addClaims(j.claims...); err != nil {
+		return nil, err
+	}
 	return jfs, nil
 }
 
+// Claims returns the jenny's claims, declared with [Owns] on the jennies it's
+// made of, and placed as their files are.
+func (j Jenny[I]) Claims() []Claim {
+	return append([]Claim(nil), j.claims...)
+}
+
 // Prefix returns a jenny that prepends dir to the path of every File the
-// receiver generates.
+// receiver generates, and to the pattern of every one of its claims.
 func (j Jenny[I]) Prefix(dir string) Jenny[I] {
+	claims := make([]Claim, len(j.claims))
+	for i, c := range j.claims {
+		claims[i] = c.placed(dir)
+	}
 	return newJenny(func(in ...I) (Files, error) {
 		fl, err := j.gen(in...)
 		if err != nil {
@@ -91,7 +109,7 @@ func (j Jenny[I]) Prefix(dir string) Jenny[I] {
 			out[i] = f.withPath(prefixer(dir))
 		}
 		return out, out.Validate()
-	})
+	}, claims)
 }
 
 // Map returns a jenny that passes every File the receiver generates through fm.
@@ -106,7 +124,7 @@ func (j Jenny[I]) Map(fm FileMapper) Jenny[I] {
 			return nil, err
 		}
 		return out, out.Validate()
-	})
+	}, j.claims)
 }
 
 // mapFiles passes each File through fm. A FileMapper can't drop a file, so a
@@ -190,12 +208,21 @@ func (b Builder[I]) each(fn func(I) (Files, error)) func(...I) (Files, error) {
 // New makes a named Jenny from a generator func of any [GenFunc] arity.
 //
 // The name identifies the jenny in errors and in the [File.From] of every
-// File it generates.
-func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
+// File it generates, and of every [Claim] declared with [Owns].
+func (b Builder[I]) New[F GenFunc[I]](name string, fn F, opts ...NewOption) Jenny[I] {
 	if name == "" {
 		panic("jenny: New requires a non-empty name")
 	}
 	nj := namedJenny(name)
+
+	var cfg newConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	claims := make([]Claim, len(cfg.owns))
+	for i, p := range cfg.owns {
+		claims[i] = newClaim(p, nj)
+	}
 
 	named := func(fl Files, err error) (Files, error) {
 		if err != nil {
@@ -238,7 +265,7 @@ func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 			return nil, fmt.Errorf("%s returned invalid Files: %w", name, err)
 		}
 		return fl, nil
-	})
+	}, claims)
 }
 
 func single(f File, err error) (Files, error) {

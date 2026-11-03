@@ -3,8 +3,11 @@ package jenny_test
 // The examples in this file are the README walkthrough. Keep them in sync.
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"go/format"
+	"os"
 	"sort"
 	"strings"
 
@@ -214,4 +217,29 @@ func Example_readme() {
 	// web/src/api/playlist/v2.ts (TSPaths)
 	// web/src/api/team/index.ts (TSIndex)
 	// web/src/api/team/v1.ts (TSPaths)
+}
+
+func Example_readmeClaim() {
+	gen := jenny.Prefix("pkg/api",
+		api.New("GoTypes", goType, jenny.Owns("*.go")),
+		api.New("Routes", routes),
+	)
+
+	root, _ := os.MkdirTemp("", "jenny-readme")
+	defer os.RemoveAll(root)
+	ctx := context.Background()
+
+	all, _ := gen.GenerateFS(resources...)
+	_ = all.Write(ctx, root)
+
+	// team is no longer an input.
+	fs, _ := gen.GenerateFS(resources[0])
+	err := fs.Verify(ctx, root)
+	// Verify also reports that routes.go changed; print only stale files.
+	var stale *jenny.StaleError
+	if errors.As(err, &stale) {
+		fmt.Println(stale)
+	}
+	// Output:
+	// pkg/api/team.go: stale: matches claim pkg/api/*.go of jenny "GoTypes", but was not generated
 }

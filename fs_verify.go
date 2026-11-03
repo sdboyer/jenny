@@ -37,11 +37,12 @@ func (e *DriftError) Error() string {
 // VerifyFS checks the contents of each file against its persisted copy, the
 // file of the same name in persisted. persisted may be any [io/fs.FS], such as
 // a directory through [os.DirFS], an [embed.FS] or a [testing/fstest.MapFS].
-// Files in persisted that the FS doesn't contain are ignored.
+// Files in persisted that the FS doesn't contain are ignored, unless one of
+// the FS's [Claim]s matches them (see [FS.Stale]).
 //
 // If any files are missing or differ, VerifyFS returns a [*DriftError] for
-// each, combined with [errors.Join] in path order; use [errors.As] to find
-// them. If reading persisted fails other than by a file not existing,
+// each, in path order, followed by a [*StaleError] for each stale file, in
+// path order, all combined with [errors.Join]; use [errors.As] to find them. If reading persisted fails other than by a file not existing,
 // VerifyFS returns that error instead, and no DriftErrors.
 //
 // VerifyFS reads persisted from several goroutines at once. It stops early,
@@ -78,5 +79,15 @@ func (fsys *FS) VerifyFS(ctx context.Context, persisted fs.FS) error {
 		return fmt.Errorf("io error while verifying tree: %w", err)
 	}
 
-	return errors.Join(diffs...)
+	stale, err := fsys.stale(ctx, persisted)
+	if err != nil {
+		return fmt.Errorf("io error while verifying tree: %w", err)
+	}
+	all := make([]error, 0, len(diffs)+len(stale))
+	all = append(all, diffs...)
+	for _, s := range stale {
+		all = append(all, s)
+	}
+
+	return errors.Join(all...)
 }

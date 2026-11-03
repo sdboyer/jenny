@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -37,11 +38,11 @@ import (
 // mutexes make FS safe for concurrent use, but it has the same scaling
 // limitations as [testing/fstest.MapFS] for large numbers of files.
 //
-// FS holds files as bytes: a [Tree] is rendered when it's added.
-//
-// Note that the statelessness of FS entails that if a particular Jenny Input
-// goes away, FS.Verify cannot know what orphaned generated files should be
-// removed.
+// FS holds files as bytes: a [Tree] is rendered when it's added. It also
+// holds the [Claim]s of the jennies that made it, which are not files, and so
+// are invisible through its io/fs methods. FS is stateless, so it can't know
+// that a file on disk that nothing generated this run was once generated,
+// unless a claim says so (see [FS.Stale]).
 type FS struct {
 	m fstest.MapFS
 
@@ -49,6 +50,9 @@ type FS struct {
 	// itself, so conflicts can be detected case-insensitively, consistent
 	// with [Files.Validate].
 	folded map[string]string
+
+	// claims holds one of each distinct Claim added, in the order added.
+	claims []Claim
 
 	mu sync.RWMutex
 }
@@ -81,7 +85,8 @@ func (fs *FS) Verify(ctx context.Context, prefix string) error {
 	return fs.VerifyFS(ctx, os.DirFS(prefix))
 }
 
-// Write writes all of the files to their indicated paths.
+// Write writes all of the files to their indicated paths. It never removes
+// files, including stale ones (see [FS.Stale]).
 //
 // If the provided prefix path is non-empty, it will be prepended to all file
 // entries in the map for writing. prefix may be an absolute path.
@@ -225,14 +230,50 @@ func (fs *FS) Merge(fs2 *FS) error {
 	// Snapshot fs2 under its own read lock before taking fs's write lock, so
 	// that fs2 can't change mid-read, and so fs.Merge(fs) can't deadlock.
 	flist := fs2.contents()
+	claims := fs2.Claims()
 
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	return fs.addRendered(flist...)
+	if err := fs.addRendered(flist...); err != nil {
+		return err
+	}
+	return fs.addClaimsLocked(claims...)
 }
 
-// Len returns the number of items in the FS.
+// Claims returns the claims the FS holds, one of each distinct claim (the
+// same pattern, from the same jennies), in the order they were added.
+func (fs *FS) Claims() []Claim {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	return append([]Claim(nil), fs.claims...)
+}
+
+func (fs *FS) addClaims(claims ...Claim) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return fs.addClaimsLocked(claims...)
+}
+
+func (fs *FS) addClaimsLocked(claims ...Claim) error {
+	var errs []error
+	for _, c := range claims {
+		if err := c.validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) != 0 {
+		return errors.Join(errs...)
+	}
+	for _, c := range claims {
+		if !slices.ContainsFunc(fs.claims, func(have Claim) bool { return have.key() == c.key() }) {
+			fs.claims = append(fs.claims, c)
+		}
+	}
+	return nil
+}
+
+// Len returns the number of files in the FS. Claims are not counted.
 func (fs *FS) Len() int {
 	fs.mu.Lock()
 	ret := len(fs.m)
@@ -274,7 +315,7 @@ func BytesMapper(fn func(f File, data []byte) ([]byte, error)) FileMapper {
 }
 
 // Map creates a new FS by passing each file in the receiver FS through the
-// provided [FileMapper].
+// provided [FileMapper]. Claims are carried over unchanged.
 func (fs *FS) Map(fn FileMapper) (*FS, error) {
 	nflist, err := mapFiles(fs.AsFiles(), fn)
 	if err != nil {
@@ -286,6 +327,9 @@ func (fs *FS) Map(fn FileMapper) (*FS, error) {
 	}
 	fs2 := NewFS()
 	if err := fs2.addRendered(rendered...); err != nil {
+		return nil, err
+	}
+	if err := fs2.addClaims(fs.Claims()...); err != nil {
 		return nil, err
 	}
 	return fs2, nil
