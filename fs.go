@@ -174,17 +174,12 @@ func render(flist []File) ([]Bytes, error) {
 	var errs []error
 	out := make([]Bytes, len(flist))
 	for i, f := range flist {
-		f = normalize(f)
-		if b, ok := f.(Bytes); ok {
-			out[i] = b
-			continue
-		}
-		data, err := f.Render()
+		b, err := toBytes(normalize(f))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("rendering %s from %q failed: %w", f.Path(), jennystack(f.From()), err))
 			continue
 		}
-		out[i] = Bytes{meta: meta{path: f.Path(), from: f.From()}, data: data}
+		out[i] = b
 	}
 	return out, errors.Join(errs...)
 }
@@ -244,13 +239,15 @@ func (fs *FS) Len() int {
 // can't drop a file: returning a nil File is an error.
 //
 // [BytesMapper] and [TreeMapper] make FileMappers that work on a file's
-// bytes, or on the value of a [Tree]. A FileMapper written directly can
-// type-switch on the kind of File it's given, for example to work on a Tree
-// when it has one and on bytes otherwise; [Move] changes a File's path
-// without rendering it.
+// bytes, or on the value of a [Tree]. A FileMapper written directly can ask
+// what kind of File it's given, with [TreeOf] and [BytesOf], for example to
+// work on a Tree when it has one and on bytes otherwise; [Move] changes a
+// File's path without rendering it. A FileMapper is given only values, never
+// pointers; even so, don't type-switch on or type-assert a File (see [File]).
 //
 // Work on a Tree's value must come before work on its bytes, because a
-// BytesMapper turns a Tree into Bytes.
+// BytesMapper turns a Tree into Bytes, and a TreeMapper after it reports an
+// error.
 //
 // jenny generally assumes that FileMappers will reuse an
 // unmodified byte slice.
@@ -258,18 +255,23 @@ type FileMapper func(File) (File, error)
 
 // BytesMapper returns a [FileMapper] that passes the content of every file
 // through fn. A [Tree] is rendered first, and replaced with [Bytes], so
-// mappers after it see bytes.
+// mappers after it see bytes. The Bytes record that they were rendered from
+// a Tree, so that a [TreeMapper] for it reports the mistake rather than
+// silently finding no Tree.
 func BytesMapper(fn func(f File, data []byte) ([]byte, error)) FileMapper {
 	return func(f File) (File, error) {
-		data, err := f.Render()
+		f = normalize(f)
+		if f == nil {
+			return nil, errors.New("BytesMapper given a nil File")
+		}
+		b, err := toBytes(f)
 		if err != nil {
 			return nil, err
 		}
-		data, err = fn(f, data)
-		if err != nil {
+		if b.data, err = fn(f, b.data); err != nil {
 			return nil, err
 		}
-		return Bytes{meta: meta{path: f.Path(), from: f.From()}, data: data}, nil
+		return b, nil
 	}
 }
 

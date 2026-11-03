@@ -88,6 +88,25 @@
 //		),
 //	)
 //
+// # Asking what a File holds
+//
+// [File] is an interface, and pointers to its kinds satisfy it too, so a File
+// can hold a nil *Bytes, which is not == nil. Jenny turns pointers into
+// values wherever user code hands it Files, so a [FileMapper] is given only
+// values, and a case naming *Bytes never matches. Never compare a File with
+// nil, type-switch on one, or type-assert one. Ask with [IsNil], [TreeOf] and
+// [BytesOf], which treat a pointer exactly as the value it points to, and
+// call [File.Render] for any File's content as bytes.
+//
+// The jennylint analyzer, in github.com/sdboyer/jenny/jennylint, finds code
+// that breaks this rule. Run it as a vet tool:
+//
+//	go install github.com/sdboyer/jenny/jennylint/cmd/jennylint@latest
+//	go vet -vettool=$(which jennylint) ./...
+//
+// It also runs in golangci-lint as a module plugin; see
+// github.com/sdboyer/jenny/jennylint/golangci for the configuration.
+//
 // # Output
 //
 // [Jenny.GenerateFS] runs a jenny and collects its output into an [FS], which

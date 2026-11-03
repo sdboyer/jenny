@@ -85,8 +85,9 @@ func Example() {
 		panic(err)
 	}
 	for _, f := range fs.AsFiles() {
-		// Everything an FS holds here is a file, rendered to Bytes.
-		fmt.Printf("%s\n\t%s", f.Path(), strings.SplitAfter(string(f.(jenny.Bytes).Data()), "\n")[0])
+		// Everything an FS holds is a file rendered to Bytes.
+		data, _ := jenny.BytesOf(f)
+		fmt.Printf("%s\n\t%s", f.Path(), strings.SplitAfter(string(data), "\n")[0])
 	}
 	// Output:
 	// packages/grafana-schema/src/index.gen.ts

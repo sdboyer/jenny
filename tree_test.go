@@ -28,12 +28,11 @@ func TestTreeIsNotRenderedUntilNeeded(t *testing.T) {
 	if renders != 0 {
 		t.Fatalf("Generate rendered %d Trees, want 0", renders)
 	}
-	tr, ok := fl[0].(jenny.Tree[words])
-	if !ok {
+	if _, ok := jenny.TreeOf[words](fl[0]); !ok {
 		t.Fatalf("got %T, want jenny.Tree[words]", fl[0])
 	}
-	if tr.Path() != "out/a.txt" || tr.FromString() != "Words" {
-		t.Errorf("Tree not placed and stamped: %s (%s)", tr.Path(), tr.FromString())
+	if fl[0].Path() != "out/a.txt" || fl[0].FromString() != "Words" {
+		t.Errorf("Tree not placed and stamped: %s (%s)", fl[0].Path(), fl[0].FromString())
 	}
 
 	jfs, err := j.GenerateFS(ab...)
@@ -74,16 +73,127 @@ func TestTreeMapper(t *testing.T) {
 	if diff := cmp.Diff(want, describe(fl)); diff != "" {
 		t.Errorf("(-want +got):\n%s", diff)
 	}
+}
 
-	// Once rendered to Bytes, a Tree is no longer one, so a TreeMapper after a
-	// BytesMapper passes it through.
+// A TreeMapper after a BytesMapper is an error for a file that was a Tree of
+// its type, and only for that file: the BytesMapper rendered away the tree the
+// TreeMapper was meant for.
+func TestTreeMapperAfterBytesMapper(t *testing.T) {
 	exclaim := jenny.BytesMapper(func(_ jenny.File, b []byte) ([]byte, error) { return append(b, '!'), nil })
-	fl = mustGen(t, j.Map(exclaim).Map(shout), ab[0])
-	if got := contents(fl)["a.words"]; got != "hi a!" {
-		t.Errorf("got %q, want %q", got, "hi a!")
+	shout := jenny.TreeMapper(func(_ jenny.File, w words) (words, error) { return append(w, "SHOUT"), nil })
+	gen := func(fl ...jenny.File) jenny.Jenny[Type] {
+		return ty.New("Mixed", func(Type) (jenny.Files, error) { return fl, nil })
 	}
-	if _, ok := fl[0].(jenny.Bytes); !ok {
-		t.Errorf("BytesMapper returned %T, want jenny.Bytes", fl[0])
+	num := jenny.NewTree("a.num", 42, func(n int) ([]byte, error) { return []byte("n"), nil })
+	wordTree := jenny.NewTree("a.words", words{"hi"}, renderWords)
+
+	// Files that were never a Tree[words] pass through, rendered or not.
+	fl := mustGen(t, gen(num, jenny.NewFile("a.bytes", []byte("bytes"))).Map(exclaim).Map(exclaim).Map(shout), ab[0])
+	want := []string{`a.num (Mixed) jenny.Bytes "n!!"`, `a.bytes (Mixed) jenny.Bytes "bytes!!"`}
+	if diff := cmp.Diff(want, describe(fl)); diff != "" {
+		t.Errorf("(-want +got):\n%s", diff)
+	}
+
+	// A Tree[words] rendered by a BytesMapper is an error naming the file,
+	// however many BytesMappers, Moves and Prefixes it went through since.
+	moved := jenny.FileMapper(func(f jenny.File) (jenny.File, error) { return jenny.Move(f, "moved/"+f.Path()), nil })
+	_, err := gen(wordTree).Map(exclaim).Map(exclaim).Map(moved).Prefix("out").Map(shout).Generate(ab[0])
+	if err == nil {
+		t.Fatal("expected an error for a TreeMapper after a BytesMapper rendered its Tree")
+	}
+	for _, s := range []string{"out/moved/a.words", "BytesMapper", "TreeMapper", "jenny.Tree[github.com/sdboyer/jenny_test.words]"} {
+		if !strings.Contains(err.Error(), s) {
+			t.Errorf("error doesn't mention %q: %s", s, err)
+		}
+	}
+
+	// In the right order, it's fine.
+	fl = mustGen(t, gen(wordTree).Map(shout).Map(exclaim), ab[0])
+	if diff := cmp.Diff([]string{`a.words (Mixed) jenny.Bytes "hi SHOUT!"`}, describe(fl)); diff != "" {
+		t.Errorf("(-want +got):\n%s", diff)
+	}
+
+	// A file rebuilt from the bytes is new content, with no record of a Tree.
+	rebuilt := jenny.FileMapper(func(f jenny.File) (jenny.File, error) {
+		data, err := f.Render()
+		return jenny.NewFile(f.Path(), data, f.From()...), err
+	})
+	if _, err := gen(wordTree).Map(exclaim).Map(rebuilt).Map(shout).Generate(ab[0]); err != nil {
+		t.Errorf("unexpected error for a file rebuilt from bytes: %s", err)
+	}
+}
+
+// The helpers that ask what a File holds treat a pointer as its value, and a
+// nil pointer as nil.
+func TestFileHelpers(t *testing.T) {
+	b := jenny.NewFile("b", []byte("data"))
+	tr := jenny.NewTree("t", words{"w"}, renderWords)
+	var nilBytes *jenny.Bytes
+	var nilTree *jenny.Tree[words]
+
+	tests := map[string]struct {
+		f     jenny.File
+		isNil bool
+		data  string // "" means BytesOf reports false
+		tree  words  // nil means TreeOf[words] reports false
+	}{
+		"nil":            {f: nil, isNil: true},
+		"nil *Bytes":     {f: nilBytes, isNil: true},
+		"nil *Tree":      {f: nilTree, isNil: true},
+		"Bytes":          {f: b, data: "data"},
+		"*Bytes":         {f: &b, data: "data"},
+		"Tree":           {f: tr, tree: words{"w"}},
+		"*Tree":          {f: &tr, tree: words{"w"}},
+		"Tree, other T":  {f: jenny.NewTree("n", 1, func(int) ([]byte, error) { return nil, nil })},
+		"*Tree, other T": {f: new(jenny.NewTree("n", 1, func(int) ([]byte, error) { return nil, nil }))},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := jenny.IsNil(tt.f); got != tt.isNil {
+				t.Errorf("IsNil = %v, want %v", got, tt.isNil)
+			}
+			data, ok := jenny.BytesOf(tt.f)
+			if ok != (tt.data != "") || string(data) != tt.data {
+				t.Errorf("BytesOf = %q, %v, want %q", data, ok, tt.data)
+			}
+			v, ok := jenny.TreeOf[words](tt.f)
+			if ok != (tt.tree != nil) {
+				t.Errorf("TreeOf ok = %v, want %v", ok, tt.tree != nil)
+			}
+			if diff := cmp.Diff(tt.tree, v); diff != "" {
+				t.Errorf("TreeOf (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// FileMappers made by jenny take pointers as their values, since user code
+// can call them directly, as ExampleFileMapper's goHeader does, and reject nil.
+func TestMakersNormalize(t *testing.T) {
+	shout := jenny.TreeMapper(func(_ jenny.File, w words) (words, error) { return append(w, "!"), nil })
+	exclaim := jenny.BytesMapper(func(_ jenny.File, b []byte) ([]byte, error) { return append(b, '!'), nil })
+	tr := jenny.NewTree("t", words{"w"}, renderWords, src("j"))
+
+	got, err := shout(&tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := jenny.TreeOf[words](got); !cmp.Equal(v, words{"w", "!"}) {
+		t.Errorf("TreeMapper of a *Tree = %v, want [w !]", v)
+	}
+	got, err = exclaim(&tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := jenny.BytesOf(got); string(data) != "w!" {
+		t.Errorf("BytesMapper of a *Tree = %q, want %q", data, "w!")
+	}
+
+	var nilTree *jenny.Tree[words]
+	for name, fm := range map[string]jenny.FileMapper{"TreeMapper": shout, "BytesMapper": exclaim} {
+		if _, err := fm(nilTree); err == nil {
+			t.Errorf("%s accepted a nil *Tree", name)
+		}
 	}
 }
 
@@ -123,7 +233,7 @@ func TestMove(t *testing.T) {
 	if renders != 0 {
 		t.Errorf("Move rendered the Tree %d times", renders)
 	}
-	if _, ok := fl[0].(jenny.Tree[words]); !ok || fl[0].Path() != "out/tests/a.txt" || fl[0].FromString() != "Words" {
+	if _, ok := jenny.TreeOf[words](fl[0]); !ok || fl[0].Path() != "out/tests/a.txt" || fl[0].FromString() != "Words" {
 		t.Errorf("got %s (%s) %T, want out/tests/a.txt (Words) as a Tree", fl[0].Path(), fl[0].FromString(), fl[0])
 	}
 

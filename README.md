@@ -142,7 +142,7 @@ type Playlist struct {
 }
 ```
 
-`gofmt` and `header` are `FileMapper`s. Both are made by `jenny.BytesMapper` from a plain `func(jenny.File, []byte) ([]byte, error)`, which gets each file's content and returns the new content. `header` builds its comment from `File.From`, so one mapper puts the right generator name on every file. (A file can also be carried as a syntax tree, a `jenny.Tree`, which `jenny.TreeMapper`s work on directly. Tree work goes before byte work, because a `BytesMapper` renders the tree. See `ExampleTreeMapper`.) `.Prefix` and `.Map` decorate a single jenny, applied left to right. `jenny.Prefix` and `jenny.Map` decorate a group of them. For decorators of your own, use `.With(func(jenny.Jenny[I]) jenny.Jenny[I])`.
+`gofmt` and `header` are `FileMapper`s. Both are made by `jenny.BytesMapper` from a plain `func(jenny.File, []byte) ([]byte, error)`, which gets each file's content and returns the new content. `header` builds its comment from `File.From`, so one mapper puts the right generator name on every file. (A file can also be carried as a syntax tree, a `jenny.Tree`, which `jenny.TreeMapper`s work on directly. The tree can be in any language: a `go/ast` tree, a CUE one, or a type of your own, with a func that renders it. Tree work goes before byte work, because a `BytesMapper` renders the tree, and a `TreeMapper` after it reports an error. See `ExampleTreeMapper`, and `ExampleTreeMapper_typeScript` for a tree that isn't Go.) `.Prefix` and `.Map` decorate a single jenny, applied left to right. `jenny.Prefix` and `jenny.Map` decorate a group of them. For decorators of your own, use `.With(func(jenny.Jenny[I]) jenny.Jenny[I])`.
 
 ### 5. Adapt converts inputs for a subtree
 
@@ -221,6 +221,58 @@ if os.Getenv("CODEGEN_VERIFY") != "" {
 }
 return fs.Write(ctx, root)
 ```
+
+## Asking what a File holds
+
+`jenny.File` is an interface, with two kinds: `jenny.Bytes` and `jenny.Tree[T]`. Pointers to them satisfy it too, so a `File` can hold a nil `*jenny.Bytes`, which isn't `== nil`. jenny turns pointers into values wherever your code hands it files, so a `FileMapper` is given only values, and a case naming `*jenny.Bytes` never matches.
+
+So never compare a `jenny.File` with nil, type-switch on one or type-assert one. Ask with these instead, which treat a pointer exactly as the value it points to:
+
+```go
+jenny.IsNil(f)               // not f == nil
+v, ok := jenny.TreeOf[T](f)  // not f.(jenny.Tree[T])
+data, ok := jenny.BytesOf(f) // not f.(jenny.Bytes)
+```
+
+`f.Render()` returns any file's content as bytes, whatever its kind.
+
+The `jennylint` analyzer finds code that breaks the rule:
+
+```sh
+go install github.com/sdboyer/jenny/jennylint/cmd/jennylint@latest
+go vet -vettool=$(which jennylint) ./...
+```
+
+It reports:
+
+- a type-switch case or type assertion on a `jenny.File` that names `*jenny.Bytes` or `*jenny.Tree[T]`. It never matches, so it's a bug.
+- one that names `jenny.Bytes` or `jenny.Tree[T]`. It matches the files jenny hands out, but misses a pointer from anywhere else, so jennylint suggests `BytesOf` or `TreeOf`, which match both.
+- a `jenny.File` compared with nil, or a `case nil` in a type switch on one. It misses a nil pointer, so jennylint suggests `IsNil`. `jennylint -fix ./...` rewrites the comparisons.
+
+To run it in golangci-lint, build a custom golangci-lint with jennylint as a [module plugin](https://golangci-lint.run/docs/plugins/module-plugins/). In `.custom-gcl.yml`:
+
+```yaml
+version: v2.12.2 # your golangci-lint version
+plugins:
+  - module: github.com/sdboyer/jenny/jennylint
+    import: github.com/sdboyer/jenny/jennylint/golangci
+    version: latest
+```
+
+In `.golangci.yml`:
+
+```yaml
+linters:
+  enable:
+    - jennylint
+  settings:
+    custom:
+      jennylint:
+        type: module
+        description: checks for nil comparisons, type switches and type assertions on a jenny.File
+```
+
+Then `golangci-lint custom` builds `./custom-gcl`, which you run in place of `golangci-lint`.
 
 ## Origins
 

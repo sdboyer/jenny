@@ -121,7 +121,8 @@ func Example_readmeGenerator() {
 
 func Example_readmeManyInputs() {
 	fl, _ := api.New("Routes", routes).Generate(resources...)
-	fmt.Print(string(fl[0].(jenny.Bytes).Data()))
+	data, _ := jenny.BytesOf(fl[0])
+	fmt.Print(string(data))
 	// Output:
 	// package api
 	//
@@ -159,7 +160,8 @@ func Example_readmeDecorate() {
 	)
 	fl, _ := gen.Generate(resources...)
 	listFiles(fl, nil)
-	fmt.Print(string(fl[0].(jenny.Bytes).Data()))
+	data, _ := jenny.BytesOf(fl[0])
+	fmt.Print(string(data))
 	// Output:
 	// pkg/api/playlist.go (GoTypes)
 	// pkg/api/routes.go (Routes)
@@ -182,7 +184,8 @@ func Example_readmeAdapt() {
 
 	fl, _ := gen.Generate(resources...)
 	listFiles(fl, nil)
-	fmt.Print(string(fl[0].(jenny.Bytes).Data()))
+	data, _ := jenny.BytesOf(fl[0])
+	fmt.Print(string(data))
 	// Output:
 	// web/src/api/playlist/index.ts (TSIndex)
 	// web/src/api/playlist/v1.ts (TSPaths)

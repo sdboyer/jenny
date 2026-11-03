@@ -98,7 +98,9 @@ func TestNilPointersInFiles(t *testing.T) {
 	if err := jenny.NewFS().Add(maybeTree("x", false)); err == nil {
 		t.Error("FS.Add accepted a nil *Tree")
 	}
-	if got := jenny.Move(maybe("x", false), "y"); got != nil {
+	// any(got) != nil checks for a nil interface exactly, which is what Move
+	// promises; jenny.IsNil would also accept a nil pointer.
+	if got := jenny.Move(maybe("x", false), "y"); any(got) != nil {
 		t.Errorf("Move of a nil *Bytes = %#v, want nil", got)
 	}
 }

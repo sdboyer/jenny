@@ -6,10 +6,18 @@ earlier version of this proposal, are now a separate PR stacked on this one.
 
 `File` changes from a struct to a sealed interface, so that a file's content
 can travel as something other than bytes (#36). For example, a Go file can
-travel as an `*ast.File`, so that mappers like gofmt, header insertion or
-import fixing work on the tree, and it's rendered to bytes only when something
-needs bytes. Every method on the interface is there because of the two content
-kinds below.
+travel as a `go/ast` tree, a CUE file as a `cue/ast` tree, or a TypeScript file
+as whatever TS AST a generator uses, so that mappers like formatting, header
+insertion or import fixing work on the tree, and it's rendered to bytes only
+when something needs bytes. Every method on the interface is there because of
+the two content kinds below.
+
+Nothing in jenny assumes the tree is Go. A `Tree[T]` is a value of any type
+and a render func for it: jenny never parses, formats or inspects the value,
+and formatting is whatever the render func does. `ExampleTreeMapper` uses a
+`go/ast` tree; `ExampleTreeMapper_typeScript` puts it side by side with a
+small TypeScript tree defined in the example itself, which stands in for a
+real AST package without adding a dependency to jenny's module.
 
 Questions marked **[Sam]** are open for Sam to decide. Each notes what the
 prototype does in the meantime.
@@ -31,6 +39,10 @@ type Bytes struct{ ... }       // NewFile(path, data, from...) Bytes; Data() []b
 type Tree[T any] struct{ ... } // NewTree(path, value, render, from...) Tree[T]; Value() T
 
 func Move(f File, path string) File
+
+func IsNil(f File) bool
+func TreeOf[T any](f File) (T, bool)
+func BytesOf(f File) ([]byte, bool)
 
 type FileMapper func(File) (File, error)
 func BytesMapper(fn func(f File, data []byte) ([]byte, error)) FileMapper
@@ -102,12 +114,13 @@ jenny as a `File` behaves exactly like a nil `File`.
     which means an interface again, with nil elements still possible.
   - The four shapes would grow to four per kind.
 - **An opaque handle.** `File` would be a small struct wrapping the sealed
-  interface, with a zero `File{}` meaning "nothing" and accessors such as
-  `jenny.TreeOf[T](f) (T, bool)` instead of type assertions. This removes the
-  trap by construction, with no reflection. The cost is that `File` is no
-  longer an interface. Mappers would switch on accessors instead of types, and
-  users couldn't write `f.(jenny.Tree[T])`. It's a reasonable alternative to
-  normalizing if the reflection check feels wrong. **[Sam]**
+  interface, with a zero `File{}` meaning "nothing", and the same accessors
+  (`TreeOf`, `BytesOf`) instead of type assertions. This removes the trap by
+  construction, with no reflection, where the prototype's helpers and
+  `jennylint` remove it by rule and by check. The cost is that `File` is no
+  longer an interface. Since mappers now use the accessors anyway, the
+  remaining difference is whether `f == nil` and `f.(jenny.Bytes)` compile at
+  all. **[Sam]**
 
 ### What a nil means where
 
@@ -128,6 +141,51 @@ nil and non-nil pointers.
 A zero `Bytes{}` is invalid (empty path) rather than "nothing". A nil `File`
 is the only "nothing".
 
+### Asking what a File holds
+
+Normalizing covers every File jenny receives, but two holes are left in code
+users write against `File`, both of which compile:
+
+- **A pointer case.** In a mapper, `case *jenny.Bytes:` or
+  `f.(*jenny.Tree[T])` never matches, because jenny hands out only values.
+- **A nil check in user code.** An author's own helper may compare a
+  `jenny.File` that holds a nil pointer with nil, before jenny has seen it.
+
+jenny closes them with three helpers, each of which treats a pointer exactly
+as its value and a nil pointer as nil:
+
+- `IsNil(f) bool`, rather than `f == nil`;
+- `TreeOf[T](f) (T, bool)`, rather than `f.(jenny.Tree[T])`;
+- `BytesOf(f) ([]byte, bool)`, rather than `f.(jenny.Bytes)`. It doesn't
+  render a Tree; `Render` gets any File's bytes.
+
+The rule, stated on `File`, in the package doc, the README and AGENTS.md, is
+never to compare a `jenny.File` with nil, type-switch on one or type-assert
+one. The examples and jenny's tests follow it.
+
+The rule is checked by an analyzer, `jennylint`
+(`github.com/sdboyer/jenny/jennylint`), which runs as a vet tool
+(`go vet -vettool=$(which jennylint) ./...`) or as a golangci-lint module
+plugin. Its diagnostics:
+
+| Category | Reports | Why |
+| --- | --- | --- |
+| `pointer` | a case or assertion on a `jenny.File` naming `*jenny.Bytes` or `*jenny.Tree[T]` | it never matches: a bug |
+| `value` | one naming `jenny.Bytes` or `jenny.Tree[T]` | it matches what jenny hands out, but misses a pointer from anywhere else; `BytesOf`/`TreeOf` match both |
+| `nil` | `==`/`!=` with nil, or `case nil`, on a `jenny.File` | it misses a nil pointer; suggests `IsNil`, with a fix for `==`/`!=` |
+
+`value` is a separate diagnostic with its own message, because the code it
+reports works wherever jenny normalized the File, unlike `pointer`. It's still
+on by default: the helpers replace it one for one, and a single rule with no
+exceptions is easier for people and agents to follow than "assertions are fine
+in a FileMapper but not in a helper".
+
+jennylint is a module of its own, so that `golang.org/x/tools` and
+golangci-lint's plugin registry stay out of jenny's `go.mod`. It matches
+jenny's types by import path rather than importing jenny, so it doesn't
+depend on a jenny version. Code in package jenny isn't checked: it's where
+`normalize` turns pointers into values. CI runs it over jenny's own module.
+
 ## Sealing (decision 1)
 
 The prototype keeps `File` sealed: only jenny's own types implement it.
@@ -140,9 +198,9 @@ The prototype keeps `File` sealed: only jenny's own types implement it.
   the trap with less help from the framework.
 - **For opening it** (io/fs-style optional capabilities, as the #36 discussion
   leaned): a sealed `Tree[T]` carries exactly one representation. With open
-  capability interfaces, like `GoAST() (*ast.File, error)`, one artifact could
-  offer several, for example an AST and a token stream, as long as it keeps a
-  single authoritative form internally. A sealed design can add that later as
+  capability interfaces, like `GoAST() (*ast.File, error)` or a CUE
+  equivalent, one artifact could offer several, for example an AST and a
+  token stream, as long as it keeps a single authoritative form internally. A sealed design can add that later as
   a kind that holds a value implementing several capability interfaces,
   without opening `File` itself.
 - Opening `File` later breaks nobody; sealing it later would.
@@ -151,12 +209,14 @@ The prototype keeps `File` sealed: only jenny's own types implement it.
 
 ## FileMapper across kinds
 
-- **What a mapper sees:** a `FileMapper` gets the `File` itself, and can
-  type-switch on its kind. Two helpers make the common cases typed:
+- **What a mapper sees:** a `FileMapper` gets the `File` itself, always a
+  value, and asks its kind with `TreeOf` and `BytesOf`. Two helpers make the
+  common cases typed:
   - `BytesMapper(fn)` renders any file and hands `fn` the bytes. The result
     is a `Bytes`.
   - `TreeMapper[T](fn)` hands `fn` the value of every `Tree[T]` and passes
-    everything else through.
+    everything else through, except a file a `BytesMapper` rendered from a
+    `Tree[T]` (decision 4).
 - **Capability-aware mappers:** a mapper can keep the tree where there is one.
   `ExampleFileMapper`'s `goHeader` adds the header comment *to the AST* when
   the file is a `Tree[goSource]`, so the file stays a tree. Any other file
@@ -164,14 +224,15 @@ The prototype keeps `File` sealed: only jenny's own types implement it.
 - **Ordering rule: tree work before byte work.** A `BytesMapper` turns a
   `Tree` into `Bytes`, which is a loss of capability, not of correctness. With
   left-to-right `Map`, and byte work like `header` outermost, that's the
-  natural order. This is documented on `Tree`, `FileMapper` and in the README.
+  natural order. This is documented on `Tree`, `FileMapper` and in the README,
+  and a `TreeMapper` that runs too late reports it (decision 4).
 - **TreeMapper funcs return a new value.** A `Tree`'s value isn't copied as it
-  passes through jennies, so changing an `*ast.File` in place would also
-  change every other holder of it, such as a generator's cache or the input to
-  an earlier `Map`. That's documented on `TreeMapper`. It can't be enforced
+  passes through jennies, so changing a tree in place, such as an `*ast.File`
+  from `go/ast` or `cue/ast`, would also change every other holder of it, such
+  as a generator's cache or the input to an earlier `Map`. That's documented on `TreeMapper`. It can't be enforced
   cheaply, because spotting a change in place would mean a deep comparison.
-  `astHeader` in the example shows how cheap a new value usually is: a
-  shallow copy of the `*ast.File` with new comments.
+  `astHeader` and `tsHeader` in the examples show how cheap a new value
+  usually is: a shallow copy with new comments.
 - **When rendering is forced:** only in a `BytesMapper`, in `FS.Add` (and so
   `GenerateFS`), or by calling `Render`. `Generate`, `Prefix`, `Move`,
   `Validate` and `TreeMapper` never render
@@ -181,21 +242,34 @@ The prototype keeps `File` sealed: only jenny's own types implement it.
 
 ### A TreeMapper after a BytesMapper (decision 4)
 
-The tree is gone by then, so the `TreeMapper` finds nothing to work on. The
-options:
+**Decided: an error only when a file lost its tree.** The options were:
 
-- **Pass the file through (prototype).** This is safe in pipelines that mix Go
-  trees with TS bytes, but an ordering mistake goes unnoticed.
-- **Always an error** (where the #36 discussion leaned): the mistake gets
-  caught, but every pipeline that mixes kinds breaks.
-- **An error only when a file has lost the capability** (from the review):
-  `BytesMapper` records on the resulting `Bytes` that it was rendered from a
-  `Tree[T]`, and a `TreeMapper[T]` errors on such a file. Files that were
-  never trees still pass through. Recording where the bytes came from doesn't
-  store a second copy of the content, so it doesn't break the
-  one-representation rule. Not implemented.
+- pass the file through, which hides an ordering mistake;
+- always an error, which breaks every pipeline that mixes kinds;
+- an error only for a file that was a tree before byte work rendered it.
 
-**[Sam]**
+Sam chose the last. A `BytesMapper` that renders a `Tree[T]` records on the
+resulting `Bytes` the type it was rendered from (`Tree[T]`, as a
+`reflect.Type`). That's provenance, not a second copy of the content, so it
+doesn't break the one-representation rule. The record survives later
+`BytesMapper`s, `Move` and `Prefix`. A `TreeMapper[T]` that meets such a file
+returns an error naming the file, the tree type, and that a byte mapper ran
+before the tree mapper:
+
+```
+postprocessing of out/a.words from Mixed failed: out/a.words was rendered from a jenny.Tree[…words] by a BytesMapper before this TreeMapper ran: tree mappers must come before byte mappers
+```
+
+Everything else passes through as before: files that were never trees, trees
+of another type left as trees, a `Tree[U]` rendered to bytes when the mapper
+is a `TreeMapper[T]`, and files a raw mapper rebuilt from bytes with `NewFile`,
+which are new content with no record. `TestTreeMapperAfterBytesMapper` covers
+each.
+
+`FS` renders trees in `Add` too, but it holds only bytes and keeps no record,
+so a `TreeMapper` passed to `FS.Map` still passes every file through. Keeping
+provenance in the `FS` would change what it stores for each file, which this
+change leaves alone. **[Sam]** if `FS.Map` should report it too.
 
 ## FS storage and its io/fs view
 
@@ -205,7 +279,8 @@ AST files are rendered when they're added to an `FS`, in `FS.Add` (and so
 - **When added (prototype).** `FS` is where output becomes concrete. Its io/fs
   view is bytes, render errors show up at `GenerateFS` with the path and the
   jenny, and each file renders once. The cost is that a `TreeMapper` passed to
-  `FS.Map` does nothing, so tree work belongs in the jenny tree.
+  `FS.Map` does nothing (see decision 4), so tree work belongs in the jenny
+  tree.
 - **When read.** Every io/fs call (`Stat` needs a size) could fail in a new
   way, results would need caching under the lock, and `Write` and `Verify`
   render anyway.
@@ -226,12 +301,13 @@ The change breaks the core type, and the compiler finds every site:
 | `func(I) (*jenny.File, error)` | `func(I) (jenny.File, error)` |
 | `*jenny.NewFile(p, d)` in a `Files` literal | `jenny.NewFile(p, d)`, which returns `Bytes` |
 | `f.RelativePath` | `f.Path()` |
-| `f.Data` | `f.Render()`, or `f.(jenny.Bytes).Data()` |
+| `f.Data` | `f.Render()`, or `jenny.BytesOf(f)` |
 | `f.From` (field) | `f.From()` |
 | `func(f File) (File, error) { f.Data = ...; return f, nil }` | `jenny.BytesMapper(func(f File, data []byte) ([]byte, error))` |
 | a mapper that sets `f.RelativePath` | `jenny.Move(f, newPath)` |
 | `File.Exists`, `File.ToFS` | removed: return nil for "nothing"; use `NewFS().Add(f)` |
 | `&File{}` as "nothing" | nil |
+| `f == nil` on a `jenny.File` | `jenny.IsNil(f)` |
 
 Most generator funcs change only their return type, and returning a nil
 `*Bytes` from a "maybe" helper keeps working. Every mapper that edits bytes
