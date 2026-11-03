@@ -54,7 +54,7 @@ var pathCases = map[string]struct {
 func TestFileValidatePaths(t *testing.T) {
 	for name, tt := range pathCases {
 		t.Run(name, func(t *testing.T) {
-			err := jenny.NewFile(tt.path, nil, src("t")).Validate()
+			err := jenny.NewFile(tt.path, nil, jenny.Name("t")).Validate()
 			if (err == nil) != tt.valid {
 				t.Errorf("Validate(%q) = %v, want valid %v", tt.path, err, tt.valid)
 			}

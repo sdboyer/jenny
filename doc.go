@@ -53,6 +53,12 @@
 // empty outputs, records the jenny's name in each File's [File.From], and
 // validates paths and path uniqueness.
 //
+// A jenny also records the package that made it, so that one package's
+// pipeline can be composed into another's without ambiguity when two jennies
+// share a name. Error messages qualify names with their package only when two
+// would otherwise read the same. Generator funcs called through a helper func
+// in another package can mark it with [Helper].
+//
 // # Composition
 //
 // [Pipeline] runs a list of jennies that take the same input type, over the
