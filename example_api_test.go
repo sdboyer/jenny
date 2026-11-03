@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"testing/fstest"
 
 	"github.com/sdboyer/jenny"
 )
@@ -198,8 +199,29 @@ func ExampleFS_Verify() {
 	err = fs.Verify(ctx, root)
 	// The error goes on to include a diff of the file's contents.
 	firstLine, _, _ := strings.Cut(err.Error(), "\n")
-	fmt.Println("after edit:", strings.ReplaceAll(filepath.ToSlash(firstLine), filepath.ToSlash(root), "<root>"))
+	fmt.Println("after edit:", firstLine)
 	// Output:
 	// after Write: <nil>
-	// after edit: <root>/team.go would have changed:
+	// after edit: team.go would have changed:
+}
+
+// VerifyFS checks against any io/fs.FS, here a map standing in for a goldens
+// archive. Each file that drifted is a *DriftError.
+func ExampleFS_VerifyFS() {
+	j := jenny.For[string]().New("Go", func(s string) (jenny.File, error) {
+		return jenny.NewFile("gen/"+s+".go", []byte("package "+s+"\n")), nil
+	})
+	fs, err := j.GenerateFS("user", "team")
+	if err != nil {
+		panic(err)
+	}
+
+	goldens := fstest.MapFS{"gen/user.go": {Data: []byte("package user\n")}}
+	err = fs.VerifyFS(context.Background(), goldens)
+	var drift *jenny.DriftError
+	if errors.As(err, &drift) {
+		fmt.Println(drift.Path, "missing:", drift.Missing)
+	}
+	// Output:
+	// gen/team.go missing: true
 }

@@ -92,7 +92,7 @@ func (c Claim) depth() int {
 // with no empty, '.' or '..' elements.
 func (c Claim) Validate() error {
 	if c.path != "." {
-		if err := validatePath(c.path); err != nil {
+		if err := checkPath(c.path); err != nil {
 			return fmt.Errorf("claim %s: %w", c.Path(), err)
 		}
 	}

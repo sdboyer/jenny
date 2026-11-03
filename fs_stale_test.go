@@ -156,7 +156,7 @@ func TestVerifyReportsStale(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected Verify to report the stale file")
 	}
-	want := filepath.Join(dir, "pkg", "api", "old.go") + `: stale: matches claim pkg/api/*.go of jenny "GoTypes", but was not generated`
+	want := `pkg/api/old.go: stale: matches claim pkg/api/*.go of jenny "GoTypes", but was not generated`
 	if err.Error() != want {
 		t.Errorf("Verify error is\n%s\nwant\n%s", err, want)
 	}

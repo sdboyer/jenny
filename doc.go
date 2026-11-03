@@ -96,7 +96,9 @@
 // can [FS.Write] the files beneath a directory, or [FS.Verify] that the files
 // beneath a directory match, and that no file a [Claim] matches is stale.
 // Generators conventionally do the latter in CI, so that checked-in generated
-// code can't drift from its inputs.
+// code can't drift from its inputs. [FS.VerifyFS] checks against any
+// [io/fs.FS] instead, and both report each file that drifted as a
+// [DriftError].
 //
 // Jenny is the successor to github.com/grafana/codejen.
 package jenny

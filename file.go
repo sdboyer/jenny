@@ -3,9 +3,7 @@ package jenny
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"path"
-	"path/filepath"
 	"strings"
 )
 
@@ -62,15 +60,24 @@ func (m meta) From() []NamedJenny { return m.from }
 
 func (m meta) FromString() string { return jennystack(m.from).String() }
 
-// Validate checks the rules for a Content's path. The path rules guarantee
-// that writing the File beneath a directory, as [FS.Write] does, can never
-// place it outside that directory, and that the File is reachable through the
-// [FS]'s [io/fs.FS] implementation.
+// Validate checks that a Content's path is a clean, relative,
+// slash-separated path (per [io/fs.ValidPath]) that means the same thing on
+// every OS, and that it has at least one jenny in its From.
+//
+// A path that means the same thing on every OS has no backslashes, no colons
+// (drive letters or stream names on Windows), no NUL bytes, and no element
+// that Windows reserves as a device name, such as NUL, COM1 or aux.go. These
+// rules don't depend on the OS Validate runs on, so a path is rejected
+// wherever it is generated, not only when it is written on Windows.
+//
+// The path rules guarantee that writing the File beneath a directory, as
+// [FS.Write] does, can never place it outside that directory, and that the
+// File is reachable through the [FS]'s [io/fs.FS] implementation.
 func (m meta) Validate() error {
 	if m.path == "" {
 		return errors.New("File paths must not be empty")
 	}
-	if err := validatePath(m.path); err != nil {
+	if err := checkPath(m.path); err != nil {
 		return err
 	}
 	return m.validateFrom()
@@ -91,16 +98,6 @@ func (m meta) in(dir string) meta {
 func (m meta) by(nj NamedJenny) meta {
 	m.from = append([]NamedJenny{nj}, m.from...)
 	return m
-}
-
-func validatePath(p string) error {
-	if filepath.IsAbs(p) {
-		return fmt.Errorf("%s: File paths must be relative", p)
-	}
-	if !fs.ValidPath(p) || strings.Contains(p, `\`) {
-		return fmt.Errorf("%s: File paths must be clean and slash-separated, with no '.', '..' or empty elements and no backslashes", p)
-	}
-	return nil
 }
 
 // NewFile returns a [Bytes] file at path with the given data.
