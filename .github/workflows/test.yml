@@ -17,6 +17,22 @@ jobs:
       - run: go mod tidy -diff
       - run: go vet ./...
       - run: go test -race ./...
+      # jennylint is a module of its own, so the steps above don't reach it.
+      - run: go mod tidy -diff
+        working-directory: jennylint
+      - run: go mod tidy -diff
+        working-directory: jennylint/testdata
+      - run: go vet ./...
+        working-directory: jennylint
+      - run: go test -race ./...
+        working-directory: jennylint
+      # jenny's own examples and tests follow the rule jennylint checks, and
+      # this runs it the way the docs tell users to.
+      - name: go vet -vettool=jennylint
+        shell: bash
+        run: |
+          (cd jennylint && go install ./cmd/jennylint)
+          go vet -vettool="$(go env GOPATH)/bin/jennylint$(go env GOEXE)" ./...
 
   lint:
     runs-on: ubuntu-latest
@@ -34,3 +50,9 @@ jobs:
           # Warm-cache runs fail to import export data for packages with
           # generic methods (Go 1.27): "internal error in importing ... (assertion failed)".
           skip-cache: true
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-mode: goinstall
+          skip-cache: true
+          working-directory: jennylint
