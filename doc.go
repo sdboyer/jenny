@@ -83,6 +83,20 @@
 //		),
 //	)
 //
+// [Builder.PrefixBy] is [Jenny.Prefix] with a directory that depends on the
+// input. Its func takes one input, so like a single-input adapter, it runs its
+// pipeline once per input, and places that input's files under the directory
+// the func returns for it. Inside an adapted pipeline, it sees the adapted
+// inputs.
+//
+//	jenny.Map(goPackageFromDir, // a FileMapper: package name from directory
+//		lineage.Adapt(schemasOf, // func(Lineage) ([]Schema, error)
+//			schema.PrefixBy(versionDir, // func(Schema) string, e.g. "v1_0"
+//				schema.New("GoTypes", genGoTypes), // writes types.go
+//			),
+//		),
+//	)
+//
 // # Output
 //
 // [Jenny.GenerateFS] runs a jenny and collects its output into an [FS], which
