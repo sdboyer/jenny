@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/sdboyer/jenny"
 )
 
@@ -194,6 +195,44 @@ func Example_readmeAdapt() {
 	// web/src/api/team/v1.ts (TSPaths)
 	// export * as v1 from "./v1";
 	// export * as v2 from "./v2";
+}
+
+func tsVersionFile(v Version) (jenny.File, error) {
+	data := fmt.Sprintf("export const path = %q;\n", fmt.Sprintf("/api/v%d/%s", v.N, v.Resource.Name))
+	return jenny.NewFile(fmt.Sprintf("v%d.ts", v.N), []byte(data)), nil
+}
+
+func tsIndexFile(vs ...Version) (jenny.File, error) {
+	var b strings.Builder
+	for _, v := range vs {
+		fmt.Fprintf(&b, "export * as v%d from \"./v%d\";\n", v.N, v.N)
+	}
+	return jenny.NewFile("index.ts", []byte(b.String())), nil
+}
+
+func Example_readmePrefixBy() {
+	gen := api.PrefixBy(func(r Resource) string { return r.Name },
+		api.Adapt(versions,
+			ver.New("TSPaths", tsVersionFile),
+			ver.New("TSIndex", tsIndexFile),
+		),
+	).Prefix("web/src/api")
+
+	// The same output as Example_readmeAdapt, file for file.
+	want, _ := api.Adapt(versions,
+		ver.New("TSPaths", tsPaths),
+		ver.New("TSIndex", tsIndex),
+	).Prefix("web/src/api").Generate(resources...)
+	got, _ := gen.Generate(resources...)
+	fmt.Println(cmp.Diff(contents(want), contents(got)) == "")
+	listFiles(got, nil)
+	// Output:
+	// true
+	// web/src/api/playlist/index.ts (TSIndex)
+	// web/src/api/playlist/v1.ts (TSPaths)
+	// web/src/api/playlist/v2.ts (TSPaths)
+	// web/src/api/team/index.ts (TSIndex)
+	// web/src/api/team/v1.ts (TSPaths)
 }
 
 func Example_readme() {

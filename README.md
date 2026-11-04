@@ -182,6 +182,22 @@ The adapter's shape decides how the subtree runs, the same way a generator func'
 
 Jennies in a subtree don't know they're in one. `tsPaths` behaves the same when it's run directly over a list of `Version`s, so it can be tested and reused on its own. Adapter errors are labeled like generator errors. Adapters can also filter: nil results are dropped, and a subtree with no inputs doesn't run.
 
+`tsPaths` and `tsIndex` each write the resource's name into their paths. When a directory depends on the input, `PrefixBy` can add it instead, so they write only `v1.ts` and `index.ts`:
+
+```go
+func tsVersionFile(v Version) (jenny.File, error)   // v1.ts
+func tsIndexFile(vs ...Version) (jenny.File, error) // index.ts
+
+api.PrefixBy(func(r Resource) string { return r.Name },
+    api.Adapt(versions,
+        ver.New("TSPaths", tsVersionFile),
+        ver.New("TSIndex", tsIndexFile),
+    ),
+).Prefix("web/src/api")
+```
+
+The output is the same as above. `PrefixBy` is `Prefix` with a directory that depends on the input, and it follows the same path rules: an empty directory means no prefix, and two inputs that place a file at the same path are an error. It sees the inputs it's given, so here, outside the `Adapt`, it gets resources; inside it, it would get versions. Its func takes one input, so like a single-input adapter, it runs its jennies once per input, and each file comes from exactly one input. A many-input jenny inside it writes one file per input, so one that should see every input goes beside `PrefixBy`, not inside it.
+
 ### 6. Put it together
 
 ```go
