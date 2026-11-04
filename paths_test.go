@@ -85,7 +85,7 @@ func TestValidPathsLocalize(t *testing.T) {
 // Prefix joins with slash semantics, so a prefix that only means a directory
 // on some OSes is caught on every OS.
 func TestPrefixRejectsNonPortableDir(t *testing.T) {
-	j := jenny.For[string]().New("J", func(s string) (*jenny.File, error) {
+	j := jenny.For[string]().New("J", func(s string) (jenny.File, error) {
 		return jenny.NewFile(s, nil), nil
 	})
 	for _, dir := range []string{`pkg\api`, "C:", "C:/pkg", "/abs", "../up", "nul"} {
@@ -97,7 +97,7 @@ func TestPrefixRejectsNonPortableDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fl[0].RelativePath; got != "pkg/api/x.go" {
+	if got := fl[0].Path(); got != "pkg/api/x.go" {
 		t.Errorf("Prefix(\"pkg/api\") gave %q, want pkg/api/x.go", got)
 	}
 }

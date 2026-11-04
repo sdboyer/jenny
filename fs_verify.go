@@ -13,7 +13,7 @@ import (
 // DriftError reports one generated file whose persisted copy is missing or
 // differs from it, as found by [FS.VerifyFS] and [FS.Verify].
 type DriftError struct {
-	// Path is the generated File's RelativePath, which is also its name in
+	// Path is the generated File's [File.Path], which is also its name in
 	// the persisted [io/fs.FS]: slash-separated on every OS.
 	Path string
 
@@ -50,7 +50,7 @@ func (fsys *FS) VerifyFS(ctx context.Context, persisted fs.FS) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(12)
 
-	files := fsys.AsFiles()
+	files := fsys.contents()
 	// Indexed by file, so the joined error lists files in path order no matter
 	// which goroutine finishes first.
 	diffs := make([]error, len(files))
@@ -60,16 +60,16 @@ func (fsys *FS) VerifyFS(ctx context.Context, persisted fs.FS) error {
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			ob, err := fs.ReadFile(persisted, item.RelativePath)
+			ob, err := fs.ReadFile(persisted, item.path)
 			if errors.Is(err, fs.ErrNotExist) {
-				diffs[i] = &DriftError{Path: item.RelativePath, Missing: true}
+				diffs[i] = &DriftError{Path: item.path, Missing: true}
 				return nil
 			}
 			if err != nil {
-				return fmt.Errorf("%s: error reading file: %w", item.RelativePath, err)
+				return fmt.Errorf("%s: error reading file: %w", item.path, err)
 			}
-			if dstr := cmp.Diff(string(ob), string(item.Data)); dstr != "" {
-				diffs[i] = &DriftError{Path: item.RelativePath, Diff: dstr}
+			if dstr := cmp.Diff(string(ob), string(item.data)); dstr != "" {
+				diffs[i] = &DriftError{Path: item.path, Diff: dstr}
 			}
 			return nil
 		})

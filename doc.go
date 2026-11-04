@@ -30,14 +30,18 @@
 // A generator func takes one or many inputs and produces one or many files
 // ([File]). Any of the four shapes in [GenFunc] will do:
 //
-//	func(I) (*File, error)    // one input, one file
+//	func(I) (File, error)     // one input, one file
 //	func(I) (Files, error)    // one input, many files
-//	func(...I) (*File, error) // many inputs, one file
+//	func(...I) (File, error)  // many inputs, one file
 //	func(...I) (Files, error) // many inputs, many files
 //
-// Returning nil (or a File that doesn't [File.Exists], or an empty Files)
-// means "nothing to generate for this input". Single-input funcs are called
-// once per input; many-input funcs are called once with all inputs.
+// Returning a nil File or an empty Files means "nothing to generate for this
+// input". Single-input funcs are called once per input; many-input funcs are
+// called once with all inputs.
+//
+// A File holds its content in one of two kinds: [Bytes], made with
+// [NewFile], or [Tree], a value such as a syntax tree, rendered to bytes only
+// when needed.
 //
 // [Builder.New] turns a generator func into a [Jenny], which is a generator
 // func with a name. Every jenny has the same type regardless of the shape of
@@ -64,6 +68,7 @@
 //
 //   - [Jenny.Prefix] places its files under a directory.
 //   - [Jenny.Map] passes its files through a [FileMapper], e.g. to add a header.
+//     [BytesMapper] and [TreeMapper] make FileMappers.
 //   - [Jenny.With] applies wrappers defined outside this package.
 //
 // The functions [Prefix] and [Map] do the same for a group of jennies.
@@ -79,9 +84,28 @@
 //		group.New("GroupDocs", genGroupDocs).Prefix("docs"),
 //		group.Adapt(splitGroup, // func(Group) ([]Type, error)
 //			typ.New("GoTypes", genGoTypes).Prefix("go"),
-//			typ.New("TypeIndex", genTypeIndex), // func(...Type) (*File, error)
+//			typ.New("TypeIndex", genTypeIndex), // func(...Type) (File, error)
 //		),
 //	)
+//
+// # Asking what a File holds
+//
+// [File] is an interface, and pointers to its kinds satisfy it too, so a File
+// can hold a nil *Bytes, which is not == nil. Jenny turns pointers into
+// values wherever user code hands it Files, so a [FileMapper] is given only
+// values, and a case naming *Bytes never matches. Never compare a File with
+// nil, type-switch on one, or type-assert one. Ask with [IsNil], [TreeOf] and
+// [BytesOf], which treat a pointer exactly as the value it points to, and
+// call [File.Render] for any File's content as bytes.
+//
+// The jennylint analyzer, in github.com/sdboyer/jenny/jennylint, finds code
+// that breaks this rule. Run it as a vet tool:
+//
+//	go install github.com/sdboyer/jenny/jennylint/cmd/jennylint@latest
+//	go vet -vettool=$(which jennylint) ./...
+//
+// It also runs in golangci-lint as a module plugin; see
+// github.com/sdboyer/jenny/jennylint/golangci for the configuration.
 //
 // # Output
 //

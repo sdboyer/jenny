@@ -3,7 +3,6 @@ package jenny
 import (
 	"errors"
 	"fmt"
-	"path"
 )
 
 // Input is used in generic type parameters solely to indicate to
@@ -24,11 +23,13 @@ type Input = any
 // GenFunc is the set of generator func signatures from which a [Jenny] can be
 // made: one or many inputs in, one or many [File]s out.
 //
-// A generator func returns a nil *File, a File that does not [File.Exists], or
-// an empty Files to indicate it had nothing to generate for its input(s).
-// Generator funcs do not need to set [File.From]; it is set for them.
+// A generator func returns a nil File or an empty Files to indicate it had
+// nothing to generate for its input(s). A nil pointer, such as a nil *Bytes
+// returned as a File, is treated exactly as a nil File, here and wherever else
+// jenny receives Files. Generator funcs do not need to set [File.From]; it is
+// set for them.
 type GenFunc[I Input] interface {
-	func(I) (*File, error) | func(I) (Files, error) | func(...I) (*File, error) | func(...I) (Files, error)
+	func(I) (File, error) | func(I) (Files, error) | func(...I) (File, error) | func(...I) (Files, error)
 }
 
 // A Jenny is a single code generator, or a composition of them, that takes
@@ -80,9 +81,16 @@ func (j Jenny[I]) GenerateFS(in ...I) (*FS, error) {
 // Prefix returns a jenny that prepends dir to the path of every File the
 // receiver generates.
 func (j Jenny[I]) Prefix(dir string) Jenny[I] {
-	return j.Map(func(f File) (File, error) {
-		f.RelativePath = path.Join(dir, f.RelativePath)
-		return f, nil
+	return newJenny(func(in ...I) (Files, error) {
+		fl, err := j.gen(in...)
+		if err != nil {
+			return nil, err
+		}
+		out := make(Files, len(fl))
+		for i, f := range fl {
+			out[i] = f.withPath(prefixer(dir))
+		}
+		return out, out.Validate()
 	})
 }
 
@@ -93,16 +101,29 @@ func (j Jenny[I]) Map(fm FileMapper) Jenny[I] {
 		if err != nil {
 			return nil, err
 		}
-		out := make(Files, 0, len(fl))
-		for _, f := range fl {
-			nf, err := fm(f)
-			if err != nil {
-				return nil, fmt.Errorf("postprocessing of %s from %s failed: %w", f.RelativePath, jennystack(f.From), err)
-			}
-			out = append(out, nf)
+		out, err := mapFiles(fl, fm)
+		if err != nil {
+			return nil, err
 		}
 		return out, out.Validate()
 	})
+}
+
+// mapFiles passes each File through fm. A FileMapper can't drop a file, so a
+// nil File from fm, including a nil pointer, is an error.
+func mapFiles(fl []File, fm FileMapper) (Files, error) {
+	out := make(Files, len(fl))
+	for i, f := range fl {
+		nf, err := fm(f)
+		if err != nil {
+			return nil, fmt.Errorf("postprocessing of %s from %s failed: %w", f.Path(), jennystack(f.From()), err)
+		}
+		if nf = normalize(nf); nf == nil {
+			return nil, fmt.Errorf("postprocessing of %s from %s returned a nil File", f.Path(), jennystack(f.From()))
+		}
+		out[i] = nf
+	}
+	return out, nil
 }
 
 // With applies each of the provided wrappers to the receiver, in order. It is
@@ -184,7 +205,11 @@ func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 		// cache), which must not accumulate a stamp per call.
 		out := make(Files, len(fl))
 		for i, f := range fl {
-			f.From = append([]NamedJenny{nj}, f.From...)
+			// This is where Files enter from generator funcs, so it's where a
+			// nil pointer becomes a nil File.
+			if f = normalize(f); f != nil { // a nil is left for Validate to report
+				f = f.stamped(nj)
+			}
 			out[i] = f
 		}
 		return out, nil
@@ -192,11 +217,11 @@ func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 
 	var run func(...I) (Files, error)
 	switch f := any(fn).(type) {
-	case func(I) (*File, error):
+	case func(I) (File, error):
 		run = b.each(func(in I) (Files, error) { return named(single(f(in))) })
 	case func(I) (Files, error):
 		run = b.each(func(in I) (Files, error) { return named(f(in)) })
-	case func(...I) (*File, error):
+	case func(...I) (File, error):
 		run = func(in ...I) (Files, error) { return named(single(f(in...))) }
 	case func(...I) (Files, error):
 		run = func(in ...I) (Files, error) { return named(f(in...)) }
@@ -216,11 +241,11 @@ func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 	})
 }
 
-func single(f *File, err error) (Files, error) {
-	if err != nil || f == nil || !f.Exists() {
+func single(f File, err error) (Files, error) {
+	if err != nil || normalize(f) == nil {
 		return nil, err
 	}
-	return Files{*f}, nil
+	return Files{f}, nil
 }
 
 // NamedJenny is a named element of a [File.From] stack.

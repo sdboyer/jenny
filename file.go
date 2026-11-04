@@ -3,46 +3,136 @@ package jenny
 import (
 	"errors"
 	"fmt"
+	"path"
+	"reflect"
 	"strings"
 )
 
-// NewFile makes it slightly more ergonomic to create a new File than
-// with a raw struct declaration.
-func NewFile(path string, data []byte, from ...NamedJenny) *File {
-	return &File{
-		RelativePath: path,
-		Data:         data,
-		From:         from,
-	}
-}
-
-// File is a single file, intended to be written or compared against
-// existing files on disk through an [FS].
+// File is a single file, intended to be written or compared against existing
+// files on disk through an [FS]. Its content is held in one of two kinds:
+// [Bytes], made with [NewFile], or [Tree], a value such as a syntax tree, in
+// whatever language the file is written in, that is rendered to bytes only
+// when they're needed.
 //
-// jenny treats a File with an empty RelativePath as not existing,
-// regardless of whether Data is empty. Thus, the zero value of File is
-// considered not to exist.
-type File struct {
-	// The relative path to which the file should be written. An empty
-	// RelativePath indicates a File that does not [File.Exists].
-	RelativePath string
+// File is sealed: only this package's types implement it. That lets the
+// framework move ([Jenny.Prefix], [Move]) and stamp ([Builder.New]) any File
+// and keep its kind, so a [TreeMapper] still finds its Tree afterwards. It's
+// also what lets the framework guarantee that a nil pointer is never mistaken
+// for a File: wherever user code hands Files to jenny, a nil *Bytes or
+// *Tree[T] is treated exactly as a nil File.
+//
+// # Asking what a File holds
+//
+// Because *Bytes and *Tree[T] satisfy File too, a File can hold a nil
+// pointer, which is not == nil, or a pointer, which a case or an assertion
+// naming the value type doesn't match. Jenny hands out only values, so a case
+// naming *jenny.Bytes never matches at all. Never compare a File with nil, and
+// never type-switch on or type-assert a File. Ask with these instead, which
+// treat a pointer exactly as the value it points to:
+//
+//   - [IsNil] reports whether a File is nil, or a nil pointer.
+//   - [TreeOf] returns the value of a [Tree].
+//   - [BytesOf] returns the data of a [Bytes].
+//
+// To get any File's content as bytes, whatever its kind, call Render.
+//
+// The jennylint analyzer (github.com/sdboyer/jenny/jennylint) reports
+// comparisons, type switches and type assertions that break this rule.
+type File interface {
+	// Path is the slash-separated path of the File, relative to the output
+	// root.
+	Path() string
 
-	// Data is the contents of the file.
-	Data []byte
-
-	// From is the stack of named jennies responsible for producing this File,
+	// From is the stack of named jennies responsible for producing the File,
 	// outermost first. Jennies made with [Builder.New] add themselves to it.
-	From []NamedJenny
+	From() []NamedJenny
+
+	// FromString joins the names of the jennies in From with colons.
+	FromString() string
+
+	// Render returns the File's content as bytes.
+	Render() ([]byte, error)
+
+	// Validate checks that the File's path is valid and that it has at least
+	// one jenny in its From. A kind may add rules of its own.
+	Validate() error
+
+	// withPath returns a copy of the File with its path passed through fn.
+	withPath(fn func(string) string) File
+
+	// stamped returns a copy of the File with nj outermost in its From.
+	stamped(nj NamedJenny) File
 }
 
-// Exists indicates whether the File should be considered to exist.
-func (f File) Exists() bool {
-	return f.RelativePath != ""
+// normalize returns f as jenny holds Files: nil if f is nil or a nil pointer,
+// and the value a pointer points to otherwise, so that a nil *Bytes is never
+// mistaken for a File, and a *Tree[T] is still found by a TreeMapper. It is
+// applied wherever user code hands Files to jenny.
+func normalize(f File) File {
+	if f == nil {
+		return nil
+	}
+	v := reflect.ValueOf(f)
+	if v.Kind() != reflect.Pointer {
+		return f
+	}
+	if v.IsNil() {
+		return nil
+	}
+	// Every kind implements File with value receivers, so the value a
+	// pointer points to is a File too.
+	return v.Elem().Interface().(File)
 }
 
-// Validate checks that the File is valid: its RelativePath is a clean,
-// relative, slash-separated path (per [io/fs.ValidPath]) that means the same
-// thing on every OS, and it has at least one jenny in its From.
+// IsNil reports whether f is nil, or a nil pointer such as a nil *Bytes. Use
+// it rather than comparing a File with nil (see [File]).
+func IsNil(f File) bool {
+	return normalize(f) == nil
+}
+
+// TreeOf returns the value of f, and true, if f is a [Tree] of T or a pointer
+// to one. Otherwise it returns the zero T, and false. Use it rather than a
+// type switch or a type assertion (see [File]).
+func TreeOf[T any](f File) (T, bool) {
+	t, ok := normalize(f).(Tree[T])
+	return t.value, ok
+}
+
+// BytesOf returns the data of f, and true, if f is a [Bytes] or a pointer to
+// one. Otherwise it returns nil, and false. It doesn't render a [Tree]: call
+// [File.Render] for any File's content as bytes. Use it rather than a type
+// switch or a type assertion (see [File]).
+func BytesOf(f File) ([]byte, bool) {
+	b, ok := normalize(f).(Bytes)
+	return b.data, ok
+}
+
+// Move returns a copy of f at path p, with its content, kind and From
+// unchanged. Unlike rebuilding the file with [NewFile], it doesn't render a
+// [Tree]. It returns nil if f is nil.
+func Move(f File, p string) File {
+	f = normalize(f)
+	if f == nil {
+		return nil
+	}
+	return f.withPath(func(string) string { return p })
+}
+
+// meta is the path and provenance every File has.
+type meta struct {
+	path string
+	from []NamedJenny
+}
+
+func (m meta) Path() string { return m.path }
+
+func (m meta) From() []NamedJenny { return m.from }
+
+func (m meta) FromString() string { return jennystack(m.from).String() }
+
+// Validate checks that the File's path is a clean, relative,
+// slash-separated path (per [io/fs.ValidPath]) that means the same thing on
+// every OS, and that it has at least one jenny in its From.
 //
 // A path that means the same thing on every OS has no backslashes, no colons
 // (drive letters or stream names on Windows), no NUL bytes, and no element
@@ -53,48 +143,86 @@ func (f File) Exists() bool {
 // The path rules guarantee that writing the File beneath a directory, as
 // [FS.Write] does, can never place it outside that directory, and that the
 // File is reachable through the [FS]'s [io/fs.FS] implementation.
-func (f File) Validate() error {
-	if !f.Exists() {
-		return nil
+func (m meta) Validate() error {
+	if m.path == "" {
+		return errors.New("File paths must not be empty")
 	}
-
-	if err := checkPath(f.RelativePath); err != nil {
+	if err := checkPath(m.path); err != nil {
 		return err
 	}
-	if len(f.From) == 0 {
-		return fmt.Errorf("%s: File must have at least one From jenny", f.RelativePath)
+	if len(m.from) == 0 {
+		return fmt.Errorf("%s: File must have at least one From jenny", m.path)
 	}
 	return nil
 }
 
-// ToFS turns a single File into a FS containing only
-// that file.
-//
-// An error is only possible if the File does not Validate.
-func (f File) ToFS() (*FS, error) {
-	wd := NewFS()
-	err := wd.add(f)
-	if err != nil {
-		return nil, err
-	}
-	return wd, nil
+func (m meta) withPath(fn func(string) string) meta {
+	m.path = fn(m.path)
+	return m
 }
 
-// FromString converts the stack of jennies in File.From to a string by
-// joining them with a colon.
-func (f File) FromString() string {
-	strs := make([]string, len(f.From))
-	for i, j := range f.From {
-		strs[i] = j.JennyName()
+func (m meta) by(nj NamedJenny) meta {
+	m.from = append([]NamedJenny{nj}, m.from...)
+	return m
+}
+
+// prefixer returns a func that places a path beneath dir.
+func prefixer(dir string) func(string) string {
+	return func(p string) string { return path.Join(dir, p) }
+}
+
+// NewFile returns a [Bytes] file at path with the given data.
+func NewFile(path string, data []byte, from ...NamedJenny) Bytes {
+	return Bytes{meta: meta{path: path, from: from}, data: data}
+}
+
+// Bytes is a File whose content is a byte slice. Make one with [NewFile].
+type Bytes struct {
+	meta
+
+	data []byte
+
+	// renderedFrom is the type of the Tree these bytes were rendered from,
+	// if any, so that a TreeMapper for that Tree can report that a
+	// BytesMapper ran before it. It's provenance, not a copy of the tree.
+	renderedFrom reflect.Type
+}
+
+// toBytes returns f as Bytes, rendering it if it's a Tree, and recording
+// which kind of Tree it was rendered from.
+func toBytes(f File) (Bytes, error) {
+	if b, ok := f.(Bytes); ok {
+		return b, nil
 	}
-	return strings.Join(strs, ":")
+	data, err := f.Render()
+	if err != nil {
+		return Bytes{}, err
+	}
+	// File is sealed, so a File that isn't Bytes is a Tree.
+	return Bytes{meta: meta{path: f.Path(), from: f.From()}, data: data, renderedFrom: reflect.TypeOf(f)}, nil
+}
+
+// Data returns the file's contents.
+func (b Bytes) Data() []byte { return b.data }
+
+// Render implements [File]. It returns Data, and never fails.
+func (b Bytes) Render() ([]byte, error) { return b.data, nil }
+
+func (b Bytes) withPath(fn func(string) string) File {
+	b.meta = b.meta.withPath(fn)
+	return b
+}
+
+func (b Bytes) stamped(nj NamedJenny) File {
+	b.meta = b.meta.by(nj)
+	return b
 }
 
 // Files is a set of File objects.
 //
-// A Files is invalid (per [Files.Validate]) if it contains a File that does
-// not [File.Exists], or if it contains more than one File having the same
-// [File.RelativePath] (note: this is case-insensitive).
+// A Files is invalid (per [Files.Validate]) if it contains a nil File
+// (including a nil pointer), a File that doesn't [File.Validate], or more
+// than one File having the same [File.Path] (note: this is case-insensitive).
 //
 // These invariants are internally enforced by FS.
 type Files []File
@@ -107,17 +235,16 @@ func (fsl Files) Validate() error {
 
 	paths := make(map[string][][]NamedJenny)
 	for _, f := range fsl {
-		normalizedPath := strings.ToLower(f.RelativePath)
-
+		if normalize(f) == nil {
+			errs = append(errs, errors.New("nil File not allowed within Files slice"))
+			continue
+		}
 		if err := f.Validate(); err != nil {
 			errs = append(errs, err)
-		} else if !f.Exists() {
-			errs = append(errs, fmt.Errorf(`nonexistent File (RelativePath == "") not allowed within Files slice`))
-		} else if exist, has := paths[normalizedPath]; has {
-			paths[normalizedPath] = append(exist, f.From)
-		} else {
-			paths[normalizedPath] = [][]NamedJenny{f.From}
+			continue
 		}
+		normalizedPath := strings.ToLower(f.Path())
+		paths[normalizedPath] = append(paths[normalizedPath], f.From())
 	}
 	for path, froms := range paths {
 		if len(froms) > 1 {

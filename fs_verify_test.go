@@ -18,7 +18,7 @@ import (
 func TestVerifyErrorOrderIsDeterministic(t *testing.T) {
 	fl := make([]jenny.File, 100)
 	for i := range fl {
-		fl[i] = *jenny.NewFile(fmt.Sprintf("f%03d", i), []byte("x"), src("test"))
+		fl[i] = jenny.NewFile(fmt.Sprintf("f%03d", i), []byte("x"), src("test"))
 	}
 	jfs := fsWith(t, fl...)
 	dir := t.TempDir()
@@ -40,7 +40,7 @@ func TestVerifyErrorOrderIsDeterministic(t *testing.T) {
 }
 
 func TestWriteVerifyHonorContext(t *testing.T) {
-	jfs := fsWith(t, *jenny.NewFile("a", []byte("a"), src("test")), *jenny.NewFile("b", []byte("b"), src("test")))
+	jfs := fsWith(t, jenny.NewFile("a", []byte("a"), src("test")), jenny.NewFile("b", []byte("b"), src("test")))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	dir := t.TempDir()
@@ -58,9 +58,9 @@ func TestWriteVerifyHonorContext(t *testing.T) {
 
 func TestVerifyFSDriftErrors(t *testing.T) {
 	jfs := fsWith(t,
-		*jenny.NewFile("a/missing.txt", []byte("a"), src("test")),
-		*jenny.NewFile("b/changed.txt", []byte("new\n"), src("test")),
-		*jenny.NewFile("c/same.txt", []byte("c"), src("test")),
+		jenny.NewFile("a/missing.txt", []byte("a"), src("test")),
+		jenny.NewFile("b/changed.txt", []byte("new\n"), src("test")),
+		jenny.NewFile("c/same.txt", []byte("c"), src("test")),
 	)
 	persisted := fstest.MapFS{
 		"b/changed.txt": {Data: []byte("old\n")},
@@ -94,8 +94,8 @@ func TestVerifyFSDriftErrors(t *testing.T) {
 
 func TestVerifyFSMatches(t *testing.T) {
 	jfs := fsWith(t,
-		*jenny.NewFile("a.txt", []byte("a"), src("test")),
-		*jenny.NewFile("d/b.txt", []byte("b"), src("test")),
+		jenny.NewFile("a.txt", []byte("a"), src("test")),
+		jenny.NewFile("d/b.txt", []byte("b"), src("test")),
 	)
 	ctx := context.Background()
 	if err := jfs.VerifyFS(ctx, jfs); err != nil {
@@ -124,8 +124,8 @@ func (e errFS) Open(name string) (fs.File, error) {
 // found, as it would otherwise hide which files could not be checked.
 func TestVerifyFSReadErrorIsNotDrift(t *testing.T) {
 	jfs := fsWith(t,
-		*jenny.NewFile("a.txt", []byte("a"), src("test")),
-		*jenny.NewFile("b.txt", []byte("b"), src("test")),
+		jenny.NewFile("a.txt", []byte("a"), src("test")),
+		jenny.NewFile("b.txt", []byte("b"), src("test")),
 	)
 	errBroken := errors.New("broken")
 	err := jfs.VerifyFS(context.Background(), errFS{fsys: fstest.MapFS{}, name: "b.txt", err: errBroken})
@@ -141,7 +141,7 @@ func TestVerifyFSReadErrorIsNotDrift(t *testing.T) {
 // Verify reads the directory through os.DirFS, so DriftError paths are
 // slash-separated names relative to the directory, on every OS.
 func TestVerifyDriftPathsAreSlashSeparated(t *testing.T) {
-	jfs := fsWith(t, *jenny.NewFile("sub/dir/a.txt", []byte("a"), src("test")))
+	jfs := fsWith(t, jenny.NewFile("sub/dir/a.txt", []byte("a"), src("test")))
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "sub", "dir"), 0o750); err != nil {
 		t.Fatal(err)
@@ -159,7 +159,7 @@ func TestVerifyDriftPathsAreSlashSeparated(t *testing.T) {
 }
 
 func TestVerifyEmptyPrefixIsWorkingDir(t *testing.T) {
-	jfs := fsWith(t, *jenny.NewFile("sub/a.txt", []byte("a"), src("test")))
+	jfs := fsWith(t, jenny.NewFile("sub/a.txt", []byte("a"), src("test")))
 	dir := t.TempDir()
 	if err := jfs.Write(context.Background(), dir); err != nil {
 		t.Fatal(err)

@@ -9,9 +9,9 @@ import (
 )
 
 func TestFSCaseInsensitiveConflicts(t *testing.T) {
-	jfs := fsWith(t, *jenny.NewFile("pkg/Types.go", nil, src("first")))
+	jfs := fsWith(t, jenny.NewFile("pkg/Types.go", nil, src("first")))
 
-	err := jfs.Add(*jenny.NewFile("pkg/types.go", nil, src("second")))
+	err := jfs.Add(jenny.NewFile("pkg/types.go", nil, src("second")))
 	if err == nil {
 		t.Fatal("Add accepted a path differing only by case from an existing one")
 	}
@@ -19,7 +19,7 @@ func TestFSCaseInsensitiveConflicts(t *testing.T) {
 		t.Errorf("error doesn't name the conflicting path: %s", err)
 	}
 
-	other := fsWith(t, *jenny.NewFile("PKG/types.go", nil, src("third")))
+	other := fsWith(t, jenny.NewFile("PKG/types.go", nil, src("third")))
 	if err := jfs.Merge(other); err == nil {
 		t.Error("Merge accepted a path differing only by case from an existing one")
 	}
@@ -30,7 +30,7 @@ func TestFSCaseInsensitiveConflicts(t *testing.T) {
 }
 
 func TestMergeSelf(t *testing.T) {
-	jfs := fsWith(t, *jenny.NewFile("a", nil, src("test")))
+	jfs := fsWith(t, jenny.NewFile("a", nil, src("test")))
 	// Must return a conflict error rather than deadlock.
 	if err := jfs.Merge(jfs); err == nil {
 		t.Error("expected conflict error merging an FS into itself")
@@ -43,7 +43,7 @@ func TestMergeWhileSourceChanges(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		for i := range 200 {
-			_ = src2.Add(*jenny.NewFile("f"+strings.Repeat("x", i), nil, src("w")))
+			_ = src2.Add(jenny.NewFile("f"+strings.Repeat("x", i), nil, src("w")))
 		}
 	})
 	for range 50 {

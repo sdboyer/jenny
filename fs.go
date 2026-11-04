@@ -37,6 +37,8 @@ import (
 // mutexes make FS safe for concurrent use, but it has the same scaling
 // limitations as [testing/fstest.MapFS] for large numbers of files.
 //
+// FS holds files as bytes: a [Tree] is rendered when it's added.
+//
 // Note that the statelessness of FS entails that if a particular Jenny Input
 // goes away, FS.Verify cannot know what orphaned generated files should be
 // removed.
@@ -91,14 +93,14 @@ func (fs *FS) Write(ctx context.Context, prefix string) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(12)
 
-	for _, it := range fs.AsFiles() {
+	for _, it := range fs.contents() {
 		g.Go(func() error {
 			if err := gctx.Err(); err != nil {
 				return err
 			}
-			local, err := filepath.Localize(it.RelativePath)
+			local, err := filepath.Localize(it.Path())
 			if err != nil {
-				return fmt.Errorf("%s: cannot be written on this OS: %w", it.RelativePath, err)
+				return fmt.Errorf("%s: cannot be written on this OS: %w", it.Path(), err)
 			}
 			path := filepath.Join(prefix, local)
 			err = os.MkdirAll(filepath.Dir(path), os.ModePerm)
@@ -106,7 +108,7 @@ func (fs *FS) Write(ctx context.Context, prefix string) error {
 				return fmt.Errorf("%s: failed to ensure parent directory exists: %w", path, err)
 			}
 
-			if err := os.WriteFile(path, it.Data, 0644); err != nil { //nolint:gosec
+			if err := os.WriteFile(path, it.data, 0644); err != nil { //nolint:gosec
 				return fmt.Errorf("%s: error while writing file: %w", path, err)
 			}
 			return nil
@@ -116,7 +118,8 @@ func (fs *FS) Write(ctx context.Context, prefix string) error {
 	return g.Wait()
 }
 
-// AsFiles returns a Files representing the contents of the FS.
+// AsFiles returns a Files representing the contents of the FS, each as
+// [Bytes].
 //
 // The contents are sorted lexicographically, and it is guaranteed that the
 // invariants enforced by [Files.Validate] are met.
@@ -124,49 +127,73 @@ func (fs *FS) AsFiles() []File {
 	if fs == nil {
 		return nil
 	}
-
-	fs.mu.RLock()
-	sl := make([]File, 0, len(fs.m))
-
-	for path, fi := range fs.m {
-		sl = append(sl, toFile(path, fi))
+	contents := fs.contents()
+	sl := make([]File, len(contents))
+	for i, b := range contents {
+		sl[i] = b
 	}
-
-	sort.Slice(sl, func(i, j int) bool {
-		return sl[i].RelativePath < sl[j].RelativePath
-	})
-
-	fs.mu.RUnlock()
 	return sl
 }
 
-// Add adds one or more files to the FS. An error is returned if the
-// RelativePath of any provided files already exists in the FS.
+// contents returns the files in the FS, sorted by path.
+func (fs *FS) contents() []Bytes {
+	fs.mu.RLock()
+	sl := make([]Bytes, 0, len(fs.m))
+	for path, fi := range fs.m {
+		sl = append(sl, toFile(path, fi))
+	}
+	fs.mu.RUnlock()
+
+	sort.Slice(sl, func(i, j int) bool {
+		return sl[i].path < sl[j].path
+	})
+	return sl
+}
+
+// Add adds one or more files to the FS, rendering each [Tree]. An error is
+// returned if the path of any provided files already exists in the FS, or if
+// one fails to render.
 func (fs *FS) Add(flist ...File) error {
+	rendered, err := render(flist)
+	if err != nil {
+		return err
+	}
 	fs.mu.Lock()
-	err := fs.add(flist...)
+	err = fs.addRendered(rendered...)
 	fs.mu.Unlock()
 	return err
 }
 
-func (fs *FS) add(flist ...File) error {
+// render validates flist, and renders each File in it to Bytes. It runs
+// before taking the FS's lock, since rendering may be slow.
+func render(flist []File) ([]Bytes, error) {
 	if err := Files(flist).Validate(); err != nil {
-		return err
+		return nil, err
 	}
 
-	return fs.addValidated(flist...)
+	var errs []error
+	out := make([]Bytes, len(flist))
+	for i, f := range flist {
+		b, err := toBytes(normalize(f))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("rendering %s from %q failed: %w", f.Path(), jennystack(f.From()), err))
+			continue
+		}
+		out[i] = b
+	}
+	return out, errors.Join(errs...)
 }
 
-func (fs *FS) addValidated(flist ...File) error {
+func (fs *FS) addRendered(flist ...Bytes) error {
 	var errs []error
 
 	for _, f := range flist {
-		if existing, has := fs.folded[strings.ToLower(f.RelativePath)]; has {
+		if existing, has := fs.folded[strings.ToLower(f.path)]; has {
 			rf := fs.m[existing]
-			if existing == f.RelativePath {
-				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path already created by jenny %q", f.RelativePath, jennystack(f.From), stack(rf)))
+			if existing == f.path {
+				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path already created by jenny %q", f.path, jennystack(f.from), stack(rf)))
 			} else {
-				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path differs only by case from %s, created by jenny %q", f.RelativePath, jennystack(f.From), existing, stack(rf)))
+				errs = append(errs, fmt.Errorf("cannot create %s for jenny %q, path differs only by case from %s, created by jenny %q", f.path, jennystack(f.from), existing, stack(rf)))
 			}
 		}
 	}
@@ -176,8 +203,8 @@ func (fs *FS) addValidated(flist ...File) error {
 	}
 
 	for _, f := range flist {
-		fs.m[f.RelativePath] = &fstest.MapFile{Data: f.Data, Sys: f.From}
-		fs.folded[strings.ToLower(f.RelativePath)] = f.RelativePath
+		fs.m[f.path] = &fstest.MapFile{Data: f.data, Sys: f.from}
+		fs.folded[strings.ToLower(f.path)] = f.path
 	}
 	return nil
 }
@@ -192,12 +219,12 @@ func (fs *FS) Merge(fs2 *FS) error {
 
 	// Snapshot fs2 under its own read lock before taking fs's write lock, so
 	// that fs2 can't change mid-read, and so fs.Merge(fs) can't deadlock.
-	flist := fs2.AsFiles()
+	flist := fs2.contents()
 
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	return fs.add(flist...)
+	return fs.addRendered(flist...)
 }
 
 // Len returns the number of items in the FS.
@@ -208,37 +235,66 @@ func (fs *FS) Len() int {
 	return ret
 }
 
-// FileMapper takes a File and transforms it into a new File.
+// FileMapper takes a File and transforms it into a new File. A FileMapper
+// can't drop a file: returning a nil File is an error.
+//
+// [BytesMapper] and [TreeMapper] make FileMappers that work on a file's
+// bytes, or on the value of a [Tree]. A FileMapper written directly can ask
+// what kind of File it's given, with [TreeOf] and [BytesOf], for example to
+// work on a Tree when it has one and on bytes otherwise; [Move] changes a
+// File's path without rendering it. A FileMapper is given only values, never
+// pointers; even so, don't type-switch on or type-assert a File (see [File]).
+//
+// Work on a Tree's value must come before work on its bytes, because a
+// BytesMapper turns a Tree into Bytes, and a TreeMapper after it reports an
+// error.
 //
 // jenny generally assumes that FileMappers will reuse an
 // unmodified byte slice.
 type FileMapper func(File) (File, error)
 
-// Map creates a new FS by passing each [File] element in the receiver FS
-// through the provided [FileMapper].
-func (fs *FS) Map(fn FileMapper) (*FS, error) {
-	flist := fs.AsFiles()
-	nflist := make([]File, 0, len(flist))
-	for _, file := range flist {
-		nf, err := fn(file)
+// BytesMapper returns a [FileMapper] that passes the content of every file
+// through fn. A [Tree] is rendered first, and replaced with [Bytes], so
+// mappers after it see bytes. The Bytes record that they were rendered from
+// a Tree, so that a [TreeMapper] for it reports the mistake rather than
+// silently finding no Tree.
+func BytesMapper(fn func(f File, data []byte) ([]byte, error)) FileMapper {
+	return func(f File) (File, error) {
+		f = normalize(f)
+		if f == nil {
+			return nil, errors.New("BytesMapper given a nil File")
+		}
+		b, err := toBytes(f)
 		if err != nil {
 			return nil, err
 		}
-		nflist = append(nflist, nf)
+		if b.data, err = fn(f, b.data); err != nil {
+			return nil, err
+		}
+		return b, nil
+	}
+}
+
+// Map creates a new FS by passing each file in the receiver FS through the
+// provided [FileMapper].
+func (fs *FS) Map(fn FileMapper) (*FS, error) {
+	nflist, err := mapFiles(fs.AsFiles(), fn)
+	if err != nil {
+		return nil, err
+	}
+	rendered, err := render(nflist)
+	if err != nil {
+		return nil, err
 	}
 	fs2 := NewFS()
-	if err := fs2.add(nflist...); err != nil {
+	if err := fs2.addRendered(rendered...); err != nil {
 		return nil, err
 	}
 	return fs2, nil
 }
 
-func toFile(path string, mf *fstest.MapFile) File {
-	return File{
-		RelativePath: path,
-		Data:         mf.Data,
-		From:         mf.Sys.([]NamedJenny),
-	}
+func toFile(path string, mf *fstest.MapFile) Bytes {
+	return Bytes{meta: meta{path: path, from: mf.Sys.([]NamedJenny)}, data: mf.Data}
 }
 
 func stack(mf *fstest.MapFile) jennystack {
