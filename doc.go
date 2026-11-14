@@ -135,10 +135,11 @@
 // [Jenny.Mermaid] draws a jenny as a Mermaid flowchart, from its declaration
 // alone, without generating anything. The flowchart shows:
 //   - the input types, and the type each Adapt converts to
-//   - every jenny, with the shape of its func, the directory its files go in
-//     and how many files it makes per input
-//   - frames around the jennies that an Adapt, PrefixBy, With or decorator
-//     applies to, titled with what applies, in the order it applies
+//   - every jenny, and whether it's given one input at a time or all at once
+//   - the directory each jenny's files are placed under, and how many files
+//     it makes, in terms of the number of inputs
+//   - frames around the jennies a Map or With applies to, and around those
+//     that are run once per input
 //
 // With [DiagramDocs], the doc comments of those types and funcs become
 // tooltips.

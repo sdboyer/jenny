@@ -72,13 +72,30 @@ func typeCopy[T any](T) (jenny.File, error) { return nil, nil }
 // box holds a value.
 type box[T any] struct{ Value T }
 
+// boxType puts a Type in a box.
+func boxType(t Type) (box[Type], error) { return box[Type]{t}, nil }
+
+// typeFields adapts a Type to its fields, of which a Type in these tests has
+// none.
+func typeFields(Type) ([]Field, error) { return nil, nil }
+
+func allFields(...Type) ([]Field, error) { return nil, nil }
+
+func fieldFiles(Field) (jenny.Files, error) { return nil, nil }
+
+func fieldIndex(...Field) (jenny.File, error) { return nil, nil }
+
 func mermaid[I any](j jenny.Jenny[I], opts ...jenny.DiagramOption) func() (string, error) {
 	return func() (string, error) { return j.Mermaid(opts...) }
 }
 
-//nolint:dupword // the expected diagrams name nodes more than once in a row
+// wantDiagram returns want with each ˋ replaced by a backtick, which a raw
+// string can't hold.
+func wantDiagram(want string) string { return strings.ReplaceAll(want, "ˋ", "`") }
+
+//nolint:dupword,maintidx // a table of expected diagrams, which name nodes more than once in a row
 func TestMermaid(t *testing.T) {
-	group, typ := jenny.For[Group](), jenny.For[Type]()
+	group, typ, field := jenny.For[Group](), jenny.For[Type](), jenny.For[Field]()
 	index := typ.New("Index", typeIndex)
 	files := typ.New("Files", typeFiles)
 
@@ -98,56 +115,114 @@ func TestMermaid(t *testing.T) {
 		want string
 	}{
 		{
-			// The adapter's shape decides how often the Adapt runs the jennies
-			// in it, and so how many files a many-input jenny makes.
-			name: "adapt fan-out",
-			got:  mermaid(jenny.Pipeline(group.Adapt(groupTypes, index), group.Adapt(allTypes, index))),
-			want: `flowchart LR
-    n0(["` + "`Group`" + `"])
-    subgraph n1["` + "`**Adapt**`" + `"]
-        n2[["` + "`groupTypes`" + `"]]
-        n3(["` + "`Type`" + `"])
-        n4["` + "`**Index** · typeIndex\n./…\n1 file per Group`" + `"]
+			// A single-input adapter runs the jennies in it once per input, so
+			// a many-input jenny in it makes a file per input. Each func that
+			// can return many multiplies the count by a factor of its own.
+			name: "counts",
+			got: mermaid(jenny.Pipeline(
+				group.Adapt(groupTypes,
+					files,
+					typ.Adapt(typeFields, field.New("FieldFiles", fieldFiles)),
+					typ.Adapt(allFields, field.New("FieldIndex", fieldIndex)),
+				),
+				group.Adapt(allTypes, index),
+			)),
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**Group** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        subgraph n2["ˋ ˋ"]
+            n3(["ˋ**Type**
+*groupTypes* ×k₁ˋ"])
+            n4["ˋ**Files** ×k₂ˋ"]
+            subgraph n6["ˋ ˋ"]
+                n7(["ˋ**Field**
+*typeFields* ×k₃ˋ"])
+                n8["ˋ**FieldFiles** ×k₄ˋ"]
+            end
+            n9(["ˋ**Field**
+*allFields* ×k₅ˋ"])
+            n10["ˋ**FieldIndex**ˋ"]
+        end
+        n11(["ˋ**Type**
+*allTypes* ×k₆ˋ"])
+        n12["ˋ**Index**ˋ"]
     end
-    subgraph n5["` + "`**Adapt**`" + `"]
-        n6[["` + "`allTypes`" + `"]]
-        n7(["` + "`Type`" + `"])
-        n8["` + "`**Index** · typeIndex\n./…\n1 file`" + `"]
-    end
-    n0 -->|"1→N"| n2
-    n2 --> n3
-    n3 -->|"N→1"| n4
-    n0 -->|"N→N"| n6
-    n6 --> n7
-    n7 -->|"N→1"| n8
+    n5["ˋ./ˋ"]@{ shape: folder }
+    n0 --> n3
+    n3 --> n4
+    n4 -.-|"n·k₁·k₂"| n5
+    n3 --> n7
+    n7 --> n8
+    n8 -.-|"n·k₁·k₃·k₄"| n5
+    n3 ==> n9
+    n9 ==> n10
+    n10 -.-|"n"| n5
+    n0 ==> n11
+    n11 ==> n12
+    n12 -.-|"1"| n5
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
+    classDef each fill:none,stroke-dasharray:4 3
+    class n2,n6 each
 `,
 		},
 		{
 			// A many-input jenny inside a PrefixBy is run once per input.
 			name: "PrefixBy",
 			got:  mermaid(api.PrefixBy(resourceDir, api.New("Routes", routes)).Prefix("web")),
-			want: `flowchart LR
-    n0(["` + "`Resource`" + `"])
-    subgraph n1["` + "`**PrefixBy** resourceDir → **Prefix** web`" + `"]
-        n2["` + "`**Routes** · routes\nweb/{Resource}/…\n1 file per Resource`" + `"]
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**Resource** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        subgraph n2["ˋ**PrefixBy** resourceDirˋ"]
+            n3["ˋ**Routes**ˋ"]
+        end
     end
-    n0 -->|"N→1"| n2
+    n4["ˋweb/{Resource}/ˋ"]@{ shape: folder }
+    n0 ==> n3
+    n3 -.-|"n"| n4
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
+    classDef each fill:none,stroke-dasharray:4 3
+    class n2 each
 `,
 		},
 		{
 			name: "With",
 			got:  mermaid(files.With(inTests).Prefix("gen").Map(stamp)),
-			want: `flowchart LR
-    n0(["` + "`Type`" + `"])
-    subgraph n1["` + "`**With** inTests → **Prefix** gen → **Map** stamp`" + `"]
-        n2["` + "`**Files** · typeFiles\n**Map** testsDir\ngen/…\nN files per Type`" + `"]
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**Type** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        subgraph n2["ˋ**Map** stampˋ"]
+            subgraph n3["ˋ**With** inTestsˋ"]
+                subgraph n4["ˋ**Map** testsDirˋ"]
+                    n5["ˋ**Files** ×kˋ"]
+                end
+            end
+        end
     end
-    n0 -->|"1→N"| n2
+    n6["ˋgen/ˋ"]@{ shape: folder }
+    n0 --> n5
+    n5 -.-|"n·k"| n6
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
 `,
 		},
 		{
-			// Pipelines that only group jennies are drawn as the jennies they
-			// run, and decorators applied to one jenny are drawn on it.
+			// Pipelines are drawn as the jennies they run, and a Prefix only
+			// as the directory files are placed in. A jenny used twice has the
+			// same factor each time.
 			name: "pipelines",
 			got: mermaid(jenny.Pipeline(
 				jenny.Pipeline(index, files),
@@ -156,42 +231,77 @@ func TestMermaid(t *testing.T) {
 				zero.Prefix("empty"),
 				jenny.Prefix("both", index, files).Prefix("outer"),
 			)),
-			want: `flowchart LR
-    n0(["` + "`Type`" + `"])
-    n1["` + "`**Index** · typeIndex\n./…\n1 file`" + `"]
-    n2["` + "`**Files** · typeFiles\n./…\nN files per Type`" + `"]
-    n3["` + "`**Index** · typeIndex\n**Prefix** one\none/…\n1 file`" + `"]
-    n4["` + "`(empty)\n**Prefix** empty`" + `"]
-    subgraph n5["` + "`**Prefix** both → **Prefix** outer`" + `"]
-        n6["` + "`**Index** · typeIndex\nouter/both/…\n1 file`" + `"]
-        n7["` + "`**Files** · typeFiles\nouter/both/…\nN files per Type`" + `"]
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**Type** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        n2["ˋ**Index**ˋ"]
+        n4["ˋ**Files** ×kˋ"]
+        n5["ˋ**Index**ˋ"]
+        n7["ˋ(empty)ˋ"]
+        n8["ˋ**Index**ˋ"]
+        n10["ˋ**Files** ×kˋ"]
     end
-    n0 -->|"N→1"| n1
-    n0 -->|"1→N"| n2
-    n0 -->|"N→1"| n3
+    n3["ˋ./ˋ"]@{ shape: folder }
+    n6["ˋone/ˋ"]@{ shape: folder }
+    n9["ˋouter/both/ˋ"]@{ shape: folder }
+    n0 ==> n2
+    n2 -.-|"1"| n3
     n0 --> n4
-    n0 -->|"N→1"| n6
-    n0 -->|"1→N"| n7
+    n4 -.-|"n·k"| n3
+    n0 ==> n5
+    n5 -.-|"1"| n6
+    n0 --> n7
+    n0 ==> n8
+    n8 -.-|"1"| n9
+    n0 --> n10
+    n10 -.-|"n·k"| n9
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
 `,
 		},
 		{
 			name: "zero Jenny",
 			got:  mermaid(zero),
-			want: `flowchart LR
-    n0(["` + "`Type`" + `"])
-    n1["` + "`(empty)`" + `"]
-    n0 --> n1
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**Type** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        n2["ˋ(empty)ˋ"]
+    end
+    n0 --> n2
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
 `,
 		},
 		{
+			// A many-input jenny that returns Files makes some number of files
+			// in all.
 			name: "many outputs",
 			got:  mermaid(jenny.Pipeline(files, typ.New("Bundle", typeBundle))),
-			want: `flowchart LR
-    n0(["` + "`Type`" + `"])
-    n1["` + "`**Files** · typeFiles\n./…\nN files per Type`" + `"]
-    n2["` + "`**Bundle** · typeBundle\n./…\nN files`" + `"]
-    n0 -->|"1→N"| n1
-    n0 -->|"N→N"| n2
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**Type** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        n2["ˋ**Files** ×k₁ˋ"]
+        n4["ˋ**Bundle** ×k₂ˋ"]
+    end
+    n3["ˋ./ˋ"]@{ shape: folder }
+    n0 --> n2
+    n2 -.-|"n·k₁"| n3
+    n0 ==> n4
+    n4 -.-|"k₂"| n3
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
 `,
 		},
 		{
@@ -199,10 +309,20 @@ func TestMermaid(t *testing.T) {
 			// and type arguments are written without their import paths.
 			name: "escaping",
 			got:  mermaid(jenny.For[box[Field]]().New("a_b*c\"d<e>#f&g`h~i\\j", typeCopy[box[Field]]).Prefix("_x_")),
-			want: `flowchart LR
-    n0(["` + "`box[jenny\\_test.Field]`" + `"])
-    n1["` + "`**a\\_b\\*c#quot;d#lt;e#gt;#35;f#amp;g'h\\~i\\\\j** · typeCopy\n**Prefix** \\_x\\_\n\\_x\\_/…\n1 file per box[jenny\\_test.Field]`" + `"]
-    n0 -->|"1→1"| n1
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**box[jenny\_test.Field]** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        n2["ˋ**a\_b\*c#quot;d#lt;e#gt;#35;f#amp;g'h\~i\\j**ˋ"]
+    end
+    n3["ˋ\_x\_/ˋ"]@{ shape: folder }
+    n0 --> n2
+    n2 -.-|"n"| n3
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
 `,
 		},
 		{
@@ -212,80 +332,131 @@ func TestMermaid(t *testing.T) {
 					sch.PrefixBy(versionDir, sch.New("GoTypes", schemaGoTypes)),
 				),
 			).Map(goPackageFromDir), jenny.DiagramDocs()),
-			want: `flowchart LR
-    n0(["` + "`Lineage`" + `"])
-    subgraph n1["` + "`**PrefixBy** func@mermaid\\_test.go:" + fmt.Sprint(lineageNameLine) + " → **Map** goPackageFromDir`" + `"]
-        subgraph n2["` + "`**Adapt**`" + `"]
-            n3[["` + "`schemasOf`" + `"]]
-            n4(["` + "`Schema`" + `"])
-            subgraph n5["` + "`**PrefixBy** versionDir`" + `"]
-                n6["` + "`**GoTypes** · schemaGoTypes\n{Lineage}/{Schema}/…\n1 file per Schema`" + `"]
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**Lineage** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        subgraph n2["ˋ**Map** goPackageFromDirˋ"]
+            subgraph n3["ˋ**PrefixBy** func@mermaid\_test.go:` + fmt.Sprint(lineageNameLine) + `ˋ"]
+                subgraph n4["ˋ ˋ"]
+                    n5(["ˋ**Schema**
+*schemasOf* ×kˋ"])
+                    subgraph n6["ˋ**PrefixBy** versionDirˋ"]
+                        n7["ˋ**GoTypes**ˋ"]
+                    end
+                end
             end
         end
     end
-    n0 -->|"1→N"| n3
-    n3 --> n4
-    n4 -->|"1→1"| n6
+    n8["ˋ{Lineage}/{Schema}/ˋ"]@{ shape: folder }
+    n0 --> n5
+    n5 --> n7
+    n7 -.-|"n·k"| n8
     click n0 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Lineage" "Lineage and Schema stand in for a thema lineage, which holds several versions of a schema."
-    click n6 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#schemaGoTypes" "schemaGoTypes generates Go types for one schema. It knows nothing about lineages: it writes types.go in package schema, so it's also usable on its own over a single schema."
+    click n7 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#schemaGoTypes" "schemaGoTypes generates Go types for one schema. It knows nothing about lineages: it writes types.go in package schema, so it's also usable on its own over a single schema."
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
+    classDef each fill:none,stroke-dasharray:4 3
+    class n3,n4,n6 each
 `,
 		},
 		{
 			name: "lineage, Adapt",
 			got:  mermaid(lin.Adapt(placeSchemas, placed.New("GoTypes", placedGoTypes)), jenny.DiagramDocs()),
-			want: `flowchart LR
-    n0(["` + "`Lineage`" + `"])
-    subgraph n1["` + "`**Adapt**`" + `"]
-        n2[["` + "`placeSchemas`" + `"]]
-        n3(["` + "`placedSchema`" + `"])
-        n4["` + "`**GoTypes** · placedGoTypes\n./…\n1 file per placedSchema`" + `"]
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**Lineage** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        subgraph n2["ˋ ˋ"]
+            n3(["ˋ**placedSchema**
+*placeSchemas* ×kˋ"])
+            n4["ˋ**GoTypes**ˋ"]
+        end
     end
-    n0 -->|"1→N"| n2
-    n2 --> n3
-    n3 -->|"1→1"| n4
+    n5["ˋ./ˋ"]@{ shape: folder }
+    n0 --> n3
+    n3 --> n4
+    n4 -.-|"n·k"| n5
     click n0 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Lineage" "Lineage and Schema stand in for a thema lineage, which holds several versions of a schema."
     click n3 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#placedSchema" "placedSchema is a Schema with the directory its output goes in and the Go package it's in."
     click n4 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#placedGoTypes" "placedGoTypes generates Go types for a placed schema, and writes its own path and package from the placement."
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
+    classDef each fill:none,stroke-dasharray:4 3
+    class n2 each
 `,
 		},
 		{
 			// Methods and generic funcs are found by their declared names, and
-			// a type declared inside a func has no tooltip.
+			// a type declared inside a func has no tooltip. An Adapt's node has
+			// the docs of both its type and its adapter, and links to the
+			// type's, if it has one.
 			name: "docs",
 			got: mermaid(jenny.Pipeline(
 				group.Adapt(groupTypes,
 					typ.New("Docs", typeGens{}.Docs),
 					typ.New("Copy", typeCopy[Type]),
 					index.Map(stamp),
+					typ.Adapt(boxType, jenny.For[box[Type]]().New("Boxed", typeCopy[box[Type]])),
 				),
 				jenny.Prefix("unlisted", group.Adapt[unlisted](toUnlisted)),
 			), jenny.DiagramDocs()),
-			want: `flowchart LR
-    n0(["` + "`Group`" + `"])
-    subgraph n1["` + "`**Adapt**`" + `"]
-        n2[["` + "`groupTypes`" + `"]]
-        n3(["` + "`Type`" + `"])
-        n4["` + "`**Docs** · typeGens.Docs\n./…\n1 file per Type`" + `"]
-        n5["` + "`**Copy** · typeCopy\n./…\n1 file per Type`" + `"]
-        n6["` + "`**Index** · typeIndex\n**Map** stamp\n./…\n1 file per Group`" + `"]
+			want: `---
+config:
+  layout: elk
+---
+flowchart LR
+    n0(["ˋ**Group** ×nˋ"])
+    subgraph n1["ˋ ˋ"]
+        subgraph n2["ˋ ˋ"]
+            n3(["ˋ**Type**
+*groupTypes* ×kˋ"])
+            n4["ˋ**Docs**ˋ"]
+            n6["ˋ**Copy**ˋ"]
+            subgraph n7["ˋ**Map** stampˋ"]
+                n8["ˋ**Index**ˋ"]
+            end
+            subgraph n9["ˋ ˋ"]
+                n10(["ˋ**box[jenny\_test.Type]**
+*boxType*ˋ"])
+                n11["ˋ**Boxed**ˋ"]
+            end
+        end
+        subgraph n12["ˋ ˋ"]
+            n13(["ˋ**unlisted**
+*func@mermaid\_test.go:` + fmt.Sprint(toUnlistedLine) + `*ˋ"])
+            n14["ˋ(empty)ˋ"]
+        end
     end
-    subgraph n7["` + "`**Adapt** → **Prefix** unlisted`" + `"]
-        n8[["` + "`func@mermaid\\_test.go:" + fmt.Sprint(toUnlistedLine) + "`" + `"]]
-        n9(["` + "`unlisted`" + `"])
-        n10["` + "`(empty)`" + `"]
-    end
-    n0 -->|"1→N"| n2
-    n2 --> n3
-    n3 -->|"1→1"| n4
-    n3 -->|"1→1"| n5
-    n3 -->|"N→1"| n6
-    n0 -->|"1→1"| n8
-    n8 --> n9
-    n9 --> n10
-    click n2 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#groupTypes" "groupTypes adapts a Group to the Types in it."
+    n5["ˋ./ˋ"]@{ shape: folder }
+    n0 --> n3
+    n3 --> n4
+    n4 -.-|"n·k"| n5
+    n3 --> n6
+    n6 -.-|"n·k"| n5
+    n3 ==> n8
+    n8 -.-|"n"| n5
+    n3 --> n10
+    n10 --> n11
+    n11 -.-|"n·k"| n5
+    n0 --> n13
+    n13 --> n14
+    click n3 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#groupTypes" "groupTypes adapts a Group to the Types in it."
     click n4 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeGens.Docs" "Docs writes a type's documentation."
-    click n5 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeCopy" "typeCopy copies its input, whatever its type."
-    click n6 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeIndex" "typeIndex lists the names of the types it's given."
+    click n6 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeCopy" "typeCopy copies its input, whatever its type."
+    click n8 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeIndex" "typeIndex lists the names of the types it's given."
+    click n10 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#box" "box holds a value. boxType puts a Type in a box."
+    click n11 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeCopy" "typeCopy copies its input, whatever its type."
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
+    classDef each fill:none,stroke-dasharray:4 3
+    class n2,n9,n12 each
 `,
 		},
 	} {
@@ -294,7 +465,7 @@ func TestMermaid(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if diff := cmp.Diff(tc.want, got); diff != "" {
+			if diff := cmp.Diff(wantDiagram(tc.want), got); diff != "" {
 				t.Errorf("diagram mismatch (-want +got):\n%s", diff)
 			}
 		})
@@ -326,7 +497,7 @@ func TestMermaidMapLabels(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if want := "**Map** " + tc.label + "\n"; !strings.Contains(got, want) {
+			if want := "**Map** " + tc.label + "`"; !strings.Contains(got, want) {
 				t.Errorf("no %q in\n%s", want, got)
 			}
 		})
@@ -408,7 +579,7 @@ func main() {
 	}
 	for _, want := range []string{
 		`click n0 href "https://pkg.go.dev/example.com/gen#Kind" "Kind is a kind of thing to generate code for."`,
-		`click n1 href "https://pkg.go.dev/example.com/gen#goTypes" "goTypes writes a kind's Go types."`,
+		`click n2 href "https://pkg.go.dev/example.com/gen#goTypes" "goTypes writes a kind's Go types."`,
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("no %q in\n%s", want, out)

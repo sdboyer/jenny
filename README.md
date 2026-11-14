@@ -246,39 +246,48 @@ return fs.Write(ctx, root)
 diagram, err := gen.Mermaid(jenny.DiagramDocs())
 ```
 ```mermaid
+---
+config:
+  layout: elk
+---
 flowchart LR
-    n0(["`Resource`"])
-    subgraph n1["`**Map** header`"]
-        subgraph n2["`**Prefix** pkg/api → **Map** gofmt`"]
-            n3["`**GoTypes** · goType
-pkg/api/…
-1 file per Resource`"]
-            n4["`**Routes** · routes
-pkg/api/…
-1 file`"]
-        end
-        subgraph n5["`**Adapt** → **Prefix** web/src/api`"]
-            n6[["`versions`"]]
-            n7(["`Version`"])
-            n8["`**TSPaths** · tsPaths
-web/src/api/…
-1 file per Version`"]
-            n9["`**TSIndex** · tsIndex
-web/src/api/…
-1 file per Resource`"]
+    n0(["`**Resource** ×n`"])
+    subgraph n1["` `"]
+        subgraph n2["`**Map** header`"]
+            subgraph n3["`**Map** gofmt`"]
+                n4["`**GoTypes**`"]
+                n6["`**Routes**`"]
+            end
+            subgraph n7["` `"]
+                n8(["`**Version**
+*versions* ×k`"])
+                n9["`**TSPaths**`"]
+                n11["`**TSIndex**`"]
+            end
         end
     end
-    n0 -->|"1→1"| n3
-    n0 -->|"N→1"| n4
-    n0 -->|"1→N"| n6
-    n6 --> n7
-    n7 -->|"1→1"| n8
-    n7 -->|"N→1"| n9
+    n5["`pkg/api/`"]@{ shape: folder }
+    n10["`web/src/api/`"]@{ shape: folder }
+    n0 --> n4
+    n4 -.-|"n"| n5
+    n0 ==> n6
+    n6 -.-|"1"| n5
+    n0 --> n8
+    n8 --> n9
+    n9 -.-|"n·k"| n10
+    n8 ==> n11
+    n11 -.-|"n"| n10
     click n0 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Resource" "Resource is one resource in an API definition."
-    click n7 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Version" "Version is one API version of a Resource."
+    click n8 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Version" "Version is one API version of a Resource."
+    classDef hidden fill:none,stroke:none
+    class n1 hidden
+    classDef each fill:none,stroke-dasharray:4 3
+    class n7 each
 ```
 
-Rounded nodes are input types: the generator's, and the one each `Adapt` converts to with its adapter func, here `versions`. Each box is a jenny, with the directory its files go in and how many files it makes. Arrows show what each jenny and adapter is given, labeled with the shape of its func: `N→1` is `func(...I) (File, error)`. A frame surrounds the jennies that an `Adapt`, `PrefixBy`, `With` or decorator applies to, and its title lists what applies, in the order it applies. The diagram shows what step 5 explains: `TSIndex` makes a file per resource, not one in all, because it's inside a single-input `Adapt`.
+Read it left to right, from the input type to the directories files are placed under. An arrow runs from a type to each func that's given it: a thin one to a func called once per input, and a thick one to a func that takes `...I`, like `Routes`, called once with all of them. An `Adapt` is drawn as the type it converts to, over the name of its adapter.
+
+Each dotted line is labeled with how many files a jenny makes from n resources. `versions` returns several versions for each resource, so it's marked `×k`, and `TSPaths`, run once per version, makes n·k files. A jenny that returns `Files` is marked the same way. A frame shows where a `Map` applies, and a dashed frame what's run once per input: `TSIndex` makes a file per resource, not one in all, because it's inside a single-input `Adapt`, as step 5 explains. A jenny that returns nothing for some input makes fewer.
 
 `DiagramDocs` reads the source of the packages the types and funcs come from. Their doc comments become tooltips (hover over `Resource`), and each `Map` is labeled with the `FileMapper` it was given. Without it, a mapper that isn't a named func is labeled with the line `Map` was called on.
 

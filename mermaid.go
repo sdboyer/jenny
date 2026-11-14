@@ -5,6 +5,7 @@ import (
 	"path"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -33,121 +34,121 @@ func DiagramDocs() DiagramOption {
 // Mermaid returns a Mermaid flowchart of how the jenny is composed, drawn
 // from its declaration alone: nothing is generated.
 //
-// The input type, and the type each [Builder.Adapt] converts to, is a rounded
-// node. Every jenny made with [Builder.New] is a box, and so is every Adapt's
-// adapter func. An arrow runs to each from the inputs it's given, labeled
-// with the shape of its func: 1→1 for func(I) (File, error), N→1 for
-// func(...I) (File, error), and so on.
+// The flowchart reads left to right, from the input type to the directories
+// files are placed under. Input types are rounded, and each jenny made with
+// [Builder.New] is a box. An arrow runs from a type to each jenny and each
+// [Builder.Adapt] that's given it: a thin one to a func that takes one input,
+// called once per input, and a thick one to a func that takes ...I, called
+// once with all of them. An Adapt is drawn as the type it converts to, over
+// the name of its adapter func.
 //
-// A frame surrounds the jennies that an Adapt, a [Builder.PrefixBy] or a
-// [Jenny.With] runs, and the jennies of a [Pipeline] that [Jenny.Prefix] or
-// [Jenny.Map] decorates. Its title names what applies to them, in the order
-// it applies. A decorator applied to a single jenny is named in its box.
+// Each jenny has a dotted line to the directory its files are placed under,
+// as far as that's known before anything runs: [Jenny.Prefix] is drawn only
+// there, {T} is the directory a [Builder.PrefixBy] over Ts picks, and a
+// FileMapper that moves files isn't accounted for. The line is labeled with
+// how many files the jenny makes, in terms of n, the number of inputs given
+// to the jenny Mermaid is called on. A jenny that returns [Files], and an
+// adapter that returns a slice, is marked with a factor of its own, ×k, or
+// ×k₁, ×k₂ and so on, for how many it returns each time it's called. A count
+// is the most a jenny makes: a nil File or an empty Files makes fewer.
 //
-// Each jenny's box gives the directory its files are placed in, which is
-// known before anything runs, with {T} for the directory a PrefixBy over Ts
-// picks. It also says how many files the jenny makes: 1 file or N files, per
-// input of whichever type it's run once per. A many-input jenny inside a
-// single-input Adapt makes a file per input of the Adapt, not one in all.
+// A frame titled with a FileMapper or a wrapper surrounds the jennies a
+// [Jenny.Map] or [Jenny.With] applies to. A dashed frame surrounds the jennies
+// that are run once per input: those in an Adapt whose adapter takes one
+// input, and those in a PrefixBy. Within one, a jenny that takes ...I is given
+// only what's made from one input at a time.
 //
-// Without [DiagramDocs], a FileMapper that isn't a named func is labeled
-// with the file and line of its Map call.
+// The flowchart's front matter selects the ELK layout, which GitHub provides.
+// Without DiagramDocs, a FileMapper that isn't a named func is labeled with
+// the file and line of its Map call.
 func (j Jenny[I]) Mermaid(opts ...DiagramOption) (string, error) {
 	var cfg diagramConfig
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	d := &diagram{}
+	root := j.describe()
+	d := &diagram{dirs: make(map[string]string), factors: fanOuts(root)}
 	if cfg.docs {
 		d.src = newDocSource()
 	}
-	return d.render(j.describe())
+	return d.render(root)
 }
 
 type diagram struct {
-	src    *docSource // nil without DiagramDocs
-	body   strings.Builder
-	edges  []string
-	clicks []string
-	ids    int
-	depth  int
-	err    error // the first doc lookup error
+	src     *docSource // nil without DiagramDocs
+	body    strings.Builder
+	dirs    map[string]string // directory node IDs, by directory
+	dirDefs []string          // directory nodes, in the order they're first used
+	edges   []string
+	clicks  []string
+	each    []string // the frames around jennies run once per input
+	factors map[*node]string
+	ids     int
+	depth   int
+	err     error // the first doc lookup error
 }
 
 // scope is what a jenny in the diagram is run over.
 type scope struct {
-	from string       // the node its inputs come from
-	per  reflect.Type // the innermost input type it's run once per; nil if it's run once over all inputs
-	path string       // the directory its files are placed in
+	from  string   // the node its inputs come from
+	card  []string // how many inputs there are in all, as a product of factors
+	calls []string // how many times a func that takes ...I is called, as a product
+	path  string   // the directory its files are placed in
 }
 
 func (d *diagram) render(root *node) (string, error) {
-	from := d.typeNode(root.in)
-	d.item(root, scope{from: from}, nil)
+	from := d.id()
+	d.line(from + `(["` + "`**" + escLabel(typeName(root.in)) + "** ×n`" + `"])`)
+	d.typeClick(from, root.in)
+	// Everything between the input and the directories is framed, so that
+	// the directories line up to the right of it.
+	all := d.id()
+	d.subgraph(all, " ", func() { d.item(root, scope{from: from, card: []string{"n"}}) })
 	if d.err != nil {
 		return "", d.err
 	}
 	var b strings.Builder
-	b.WriteString("flowchart LR\n")
+	b.WriteString("---\nconfig:\n  layout: elk\n---\nflowchart LR\n")
 	b.WriteString(d.body.String())
-	for _, s := range d.edges {
-		b.WriteString("    " + s + "\n")
+	for _, group := range [][]string{d.dirDefs, d.edges, d.clicks} {
+		for _, s := range group {
+			b.WriteString("    " + s + "\n")
+		}
 	}
-	for _, s := range d.clicks {
-		b.WriteString("    " + s + "\n")
+	b.WriteString("    classDef hidden fill:none,stroke:none\n")
+	b.WriteString("    class " + all + " hidden\n")
+	if len(d.each) != 0 {
+		b.WriteString("    classDef each fill:none,stroke-dasharray:4 3\n")
+		b.WriteString("    class " + strings.Join(d.each, ",") + " each\n")
 	}
 	return b.String(), nil
 }
 
-// item draws n, under chain, the decorators applied to it, outermost first.
-func (d *diagram) item(n *node, sc scope, chain []*node) {
-	chain = chain[:len(chain):len(chain)] // appends below must not share
+func (d *diagram) item(n *node, sc scope) {
 	switch n.op {
 	case opPrefix:
 		sc.path = path.Join(sc.path, n.dir)
-		d.item(n.children[0], sc, append(chain, n))
+		d.item(n.children[0], sc)
 	case opMap:
-		d.item(n.children[0], sc, append(chain, n))
+		d.subgraph(d.id(), "**Map** "+escLabel(d.mapperLabel(n)), func() { d.item(n.children[0], sc) })
+	case opWith:
+		d.subgraph(d.id(), "**With** "+escLabel(funcLabel(n.fn)), func() { d.item(n.children[0], sc) })
 	case opPipeline:
-		items := flatten(n.children)
-		switch {
-		case len(items) == 0:
-			d.empty(sc, chain)
-		case len(items) == 1:
-			d.item(items[0], sc, chain)
-		case len(chain) == 0:
-			d.items(items, sc)
-		default:
-			d.subgraph(d.title("", chain), func() { d.items(items, sc) })
-		}
+		d.items(n.children, sc)
 	case opAdapt:
-		d.subgraph(d.title("**Adapt**", chain), func() {
-			adapter := d.id()
-			d.line(adapter + `[["` + "`" + escLabel(funcLabel(n.fn)) + "`" + `"]]`)
-			d.edge(sc.from, adapter, arity(n))
-			d.funcClick(adapter, n.fn)
-			inner := sc
-			inner.from = d.typeNode(n.out)
-			d.edge(adapter, inner.from, "")
-			if !n.manyIn {
-				inner.per = n.in
-			}
-			d.items(n.children, inner)
-		})
+		if n.manyIn {
+			d.adapt(n, sc)
+			return
+		}
+		d.eachFrame(" ", func() { d.adapt(n, sc) })
 	case opPrefixBy:
 		sc.path = path.Join(sc.path, "{"+typeName(n.in)+"}")
-		sc.per = n.in
-		d.subgraph(d.title("**PrefixBy** "+escLabel(funcLabel(n.fn)), chain), func() {
-			d.items(n.children, sc)
-		})
-	case opWith:
-		d.subgraph(d.title("**With** "+escLabel(funcLabel(n.fn)), chain), func() {
-			d.item(n.children[0], sc, nil)
-		})
+		sc.calls = sc.card
+		d.eachFrame("**PrefixBy** "+escLabel(funcLabel(n.fn)), func() { d.items(n.children, sc) })
 	case opNew:
-		d.leaf(n, sc, chain)
+		d.leaf(n, sc)
 	case opEmpty:
-		d.empty(sc, chain)
+		d.empty(sc)
 	}
 }
 
@@ -156,15 +157,15 @@ func (d *diagram) item(n *node, sc scope, chain []*node) {
 func (d *diagram) items(ns []*node, sc scope) {
 	ns = flatten(ns)
 	if len(ns) == 0 {
-		d.empty(sc, nil)
+		d.empty(sc)
 	}
 	for _, n := range ns {
-		d.item(n, sc, nil)
+		d.item(n, sc)
 	}
 }
 
-// flatten returns ns with every undecorated Pipeline among them replaced by
-// the jennies it runs, which is the same thing.
+// flatten returns ns with every Pipeline among them replaced by the jennies
+// it runs, which is the same thing.
 func flatten(ns []*node) []*node {
 	var out []*node
 	for _, n := range ns {
@@ -177,67 +178,86 @@ func flatten(ns []*node) []*node {
 	return out
 }
 
-func (d *diagram) leaf(n *node, sc scope, chain []*node) {
+// adapt draws an Adapt as the type it converts to, and the jennies it runs
+// over that type.
+func (d *diagram) adapt(n *node, sc scope) {
 	id := d.id()
-	head := "**" + escLabel(n.name) + "**"
-	if fl := funcLabel(n.fn); fl != "" {
-		head += " · " + escLabel(fl)
+	label := "**" + escLabel(typeName(n.out)) + "**\n*" + escLabel(funcLabel(n.fn)) + "*" + d.factor(n)
+	d.line(id + `(["` + "`" + label + "`" + `"])`)
+	d.feed(sc.from, id, n.manyIn)
+	d.adaptClick(id, n)
+	inner := scope{from: id, path: sc.path}
+	if n.manyIn {
+		inner.calls = sc.calls
+	} else {
+		inner.calls = sc.card
 	}
-	lines := []string{head}
-	if len(chain) != 0 {
-		lines = append(lines, d.title("", chain))
+	inner.card = times(inner.calls, d.factors[n])
+	d.items(n.children, inner)
+}
+
+func (d *diagram) leaf(n *node, sc scope) {
+	id := d.id()
+	d.line(id + `["` + "`**" + escLabel(n.name) + "**" + d.factor(n) + "`" + `"]`)
+	d.feed(sc.from, id, n.manyIn)
+	count := sc.card
+	if n.manyIn {
+		count = sc.calls
 	}
-	lines = append(lines, escLabel(placed(sc.path)), escLabel(fanOut(n, sc.per)))
-	d.line(id + `["` + "`" + strings.Join(lines, "\n") + "`" + `"]`)
-	d.edge(sc.from, id, arity(n))
+	d.output(id, times(count, d.factors[n]), sc.path)
 	d.funcClick(id, n.fn)
 }
 
-func (d *diagram) empty(sc scope, chain []*node) {
+func (d *diagram) empty(sc scope) {
 	id := d.id()
-	lines := []string{"(empty)"}
-	if len(chain) != 0 {
-		lines = append(lines, d.title("", chain))
+	d.line(id + `["` + "`(empty)`" + `"]`)
+	d.feed(sc.from, id, false)
+}
+
+// factor is the mark of the factor n multiplies what it's given by, if it
+// can return many.
+func (d *diagram) factor(n *node) string {
+	if f := d.factors[n]; f != "" {
+		return " ×" + f
 	}
-	d.line(id + `["` + "`" + strings.Join(lines, "\n") + "`" + `"]`)
-	d.edge(sc.from, id, "")
+	return ""
 }
 
-func (d *diagram) typeNode(t reflect.Type) string {
-	id := d.id()
-	d.line(id + `(["` + "`" + escLabel(typeName(t)) + "`" + `"])`)
-	d.typeClick(id, t)
-	return id
-}
-
-func (d *diagram) subgraph(title string, body func()) {
-	d.line("subgraph " + d.id() + `["` + "`" + title + "`" + `"]`)
+func (d *diagram) subgraph(id, title string, body func()) {
+	d.line("subgraph " + id + `["` + "`" + title + "`" + `"]`)
 	d.depth++
 	body()
 	d.depth--
 	d.line("end")
 }
 
-// title joins head and chain, in the order the decorators in chain apply,
-// innermost first.
-func (d *diagram) title(head string, chain []*node) string {
-	var parts []string
-	if head != "" {
-		parts = append(parts, head)
+// eachFrame draws a dashed frame, around jennies run once per input.
+func (d *diagram) eachFrame(title string, body func()) {
+	id := d.id()
+	d.each = append(d.each, id)
+	d.subgraph(id, title, body)
+}
+
+// feed draws the arrow from a type to a func it's given to: thick for a func
+// that takes ...I.
+func (d *diagram) feed(from, to string, many bool) {
+	arrow := " --> "
+	if many {
+		arrow = " ==> "
 	}
-	for i := len(chain) - 1; i >= 0; i-- {
-		switch n := chain[i]; n.op {
-		case opPrefix:
-			dir := n.dir
-			if dir == "" {
-				dir = `""`
-			}
-			parts = append(parts, "**Prefix** "+escLabel(dir))
-		case opMap:
-			parts = append(parts, "**Map** "+escLabel(d.mapperLabel(n)))
-		}
+	d.edges = append(d.edges, from+arrow+to)
+}
+
+// output draws the dotted line from a jenny to the directory its files are
+// placed in, labeled with how many files it makes.
+func (d *diagram) output(from string, count []string, dir string) {
+	id, ok := d.dirs[dir]
+	if !ok {
+		id = d.id()
+		d.dirs[dir] = id
+		d.dirDefs = append(d.dirDefs, id+`["`+"`"+escLabel(dirLabel(dir))+"`"+`"]@{ shape: folder }`)
 	}
-	return strings.Join(parts, " → ")
+	d.edges = append(d.edges, from+` -.-|"`+product(count)+`"| `+id)
 }
 
 // mapperLabel names the FileMapper given to a Map: by its own name if it's a
@@ -258,36 +278,67 @@ func (d *diagram) mapperLabel(n *node) string {
 }
 
 func (d *diagram) typeClick(id string, t reflect.Type) {
-	if d.src == nil || d.err != nil {
-		return
+	if pkg, name, ok := typeSymbol(t); ok {
+		d.click(id, []symbol{{pkg: pkg, name: name}})
 	}
+}
+
+func (d *diagram) funcClick(id string, fn symbol) {
+	d.click(id, []symbol{fn})
+}
+
+// adaptClick gives an Adapt's node the docs of both the type it converts to
+// and its adapter, linked to the type's.
+func (d *diagram) adaptClick(id string, n *node) {
+	var syms []symbol
+	if pkg, name, ok := typeSymbol(n.out); ok {
+		syms = append(syms, symbol{pkg: pkg, name: name})
+	}
+	d.click(id, append(syms, n.fn))
+}
+
+// typeSymbol returns the package and name of the type t, or of the type it
+// points to, if it's named and declared in a package.
+func typeSymbol(t reflect.Type) (string, string, bool) {
 	if t.Kind() == reflect.Pointer && t.Name() == "" {
 		t = t.Elem()
 	}
 	if t.Name() == "" || t.PkgPath() == "" {
-		return
+		return "", "", false
 	}
-	d.click(id, t.PkgPath(), stripTypeArgs(t.Name()))
+	return t.PkgPath(), stripTypeArgs(t.Name()), true
 }
 
-func (d *diagram) funcClick(id string, fn symbol) {
-	if d.src == nil || d.err != nil || fn.name == "" {
+// click gives node id a tooltip of the docs of syms, the ones that have a
+// doc comment, linked to the first of those.
+func (d *diagram) click(id string, syms []symbol) {
+	if d.src == nil || d.err != nil {
 		return
 	}
-	d.click(id, fn.pkg, fn.name)
-}
-
-func (d *diagram) click(id, pkg, name string) {
-	doc, link, err := d.src.doc(pkg, name)
-	if err != nil {
-		d.err = err
-		return
+	var docs []string
+	var link string
+	for _, s := range syms {
+		if s.name == "" {
+			continue
+		}
+		doc, pkg, err := d.src.doc(s.pkg, s.name)
+		if err != nil {
+			d.err = err
+			return
+		}
+		if doc == "" {
+			continue
+		}
+		if link == "" {
+			// Import paths and Go identifiers hold nothing Mermaid needs
+			// escaped.
+			link = "https://pkg.go.dev/" + pkg + "#" + s.name
+		}
+		docs = append(docs, doc)
 	}
-	if doc == "" {
-		return
+	if len(docs) != 0 {
+		d.clicks = append(d.clicks, fmt.Sprintf(`click %s href "%s" "%s"`, id, link, escTooltip(strings.Join(docs, " "))))
 	}
-	// Import paths and Go identifiers hold nothing Mermaid needs escaped.
-	d.clicks = append(d.clicks, fmt.Sprintf(`click %s href "https://pkg.go.dev/%s#%s" "%s"`, id, link, name, escTooltip(doc)))
 }
 
 func (d *diagram) id() string {
@@ -302,50 +353,55 @@ func (d *diagram) line(s string) {
 	d.body.WriteString(strings.Repeat("    ", d.depth+1) + s + "\n")
 }
 
-func (d *diagram) edge(from, to, label string) {
-	if label == "" {
-		d.edges = append(d.edges, from+" --> "+to)
-		return
+// fanOuts names the factor that each jenny that returns Files, and each
+// adapter that returns a slice, multiplies what it's given by: k if there's
+// one, and otherwise k₁, k₂ and so on, in the order they're drawn.
+func fanOuts(root *node) map[*node]string {
+	var many []*node
+	seen := make(map[*node]bool)
+	var walk func(*node)
+	walk = func(n *node) {
+		if n.manyOut && !seen[n] {
+			seen[n] = true
+			many = append(many, n)
+		}
+		for _, c := range n.children {
+			walk(c)
+		}
 	}
-	d.edges = append(d.edges, from+` -->|"`+label+`"| `+to)
+	walk(root)
+	names := make(map[*node]string, len(many))
+	for i, n := range many {
+		if len(many) == 1 {
+			names[n] = "k"
+			continue
+		}
+		names[n] = "k" + strings.Map(func(r rune) rune { return r - '0' + '₀' }, strconv.Itoa(i+1))
+	}
+	return names
 }
 
-// arity is the shape of n's func: how many inputs it takes and how many
-// outputs it returns.
-func arity(n *node) string {
-	in, out := "1", "1"
-	if n.manyIn {
-		in = "N"
+// times returns the product fs multiplied by f, if there is an f.
+func times(fs []string, f string) []string {
+	if f == "" {
+		return fs
 	}
-	if n.manyOut {
-		out = "N"
-	}
-	return in + "→" + out
+	return append(fs[:len(fs):len(fs)], f)
 }
 
-// fanOut says how many files a New jenny makes, given the innermost input
-// type it's run once per.
-func fanOut(n *node, per reflect.Type) string {
-	qty := "1 file"
-	if n.manyOut {
-		qty = "N files"
+func product(fs []string) string {
+	if len(fs) == 0 {
+		return "1"
 	}
-	switch {
-	case !n.manyIn:
-		return qty + " per " + typeName(n.in)
-	case per != nil:
-		return qty + " per " + typeName(per)
-	default:
-		return qty
-	}
+	return strings.Join(fs, "·")
 }
 
-// placed is the directory a jenny's files are placed in, as shown on its box.
-func placed(dir string) string {
+// dirLabel is a directory, as its node shows it.
+func dirLabel(dir string) string {
 	if dir == "" {
-		return "./…"
+		return "./"
 	}
-	return dir + "/…"
+	return dir + "/"
 }
 
 func funcLabel(fn symbol) string {
