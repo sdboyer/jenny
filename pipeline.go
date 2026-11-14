@@ -1,6 +1,9 @@
 package jenny
 
-import "errors"
+import (
+	"errors"
+	"reflect"
+)
 
 // Pipeline returns a jenny that runs each of the provided jennies, in order,
 // over the same inputs.
@@ -26,7 +29,7 @@ func Pipeline[I Input](js ...Jenny[I]) Jenny[I] {
 			return nil, errors.Join(errs...)
 		}
 		return all, all.Validate()
-	})
+	}, &node{op: opPipeline, in: reflect.TypeFor[I](), children: describeAll(js)})
 }
 
 // Prefix returns a [Pipeline] of the provided jennies, with dir prepended to

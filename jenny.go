@@ -3,6 +3,7 @@ package jenny
 import (
 	"errors"
 	"fmt"
+	"reflect"
 )
 
 // Input is used in generic type parameters solely to indicate to
@@ -44,12 +45,13 @@ type GenFunc[I Input] interface {
 //
 // The zero value of Jenny generates nothing.
 type Jenny[I Input] struct {
-	run func(in ...I) (Files, error)
+	run  func(in ...I) (Files, error)
+	desc *node
 }
 
 // newJenny is the only place a Jenny is constructed.
-func newJenny[I Input](run func(in ...I) (Files, error)) Jenny[I] {
-	return Jenny[I]{run: run}
+func newJenny[I Input](run func(in ...I) (Files, error), desc *node) Jenny[I] {
+	return Jenny[I]{run: run, desc: desc}
 }
 
 func (j Jenny[I]) gen(in ...I) (Files, error) {
@@ -81,6 +83,8 @@ func (j Jenny[I]) GenerateFS(in ...I) (*FS, error) {
 // Prefix returns a jenny that prepends dir to the path of every File the
 // receiver generates.
 func (j Jenny[I]) Prefix(dir string) Jenny[I] {
+	n := decorates(opPrefix, j)
+	n.dir = dir
 	return newJenny(func(in ...I) (Files, error) {
 		fl, err := j.gen(in...)
 		if err != nil {
@@ -91,11 +95,13 @@ func (j Jenny[I]) Prefix(dir string) Jenny[I] {
 			out[i] = f.withPath(prefixer(dir))
 		}
 		return out, out.Validate()
-	})
+	}, n)
 }
 
 // Map returns a jenny that passes every File the receiver generates through fm.
 func (j Jenny[I]) Map(fm FileMapper) Jenny[I] {
+	n := decorates(opMap, j)
+	n.fn, n.site = funcSymbol(fm), callerSite()
 	return newJenny(func(in ...I) (Files, error) {
 		fl, err := j.gen(in...)
 		if err != nil {
@@ -106,7 +112,7 @@ func (j Jenny[I]) Map(fm FileMapper) Jenny[I] {
 			return nil, err
 		}
 		return out, out.Validate()
-	})
+	}, n)
 }
 
 // mapFiles passes each File through fm. A FileMapper can't drop a file, so a
@@ -131,6 +137,9 @@ func mapFiles(fl []File, fm FileMapper) (Files, error) {
 func (j Jenny[I]) With(wrappers ...func(Jenny[I]) Jenny[I]) Jenny[I] {
 	for _, w := range wrappers {
 		j = w(j)
+		n := decorates(opWith, j)
+		n.fn = funcSymbol(w)
+		j = newJenny(j.run, n)
 	}
 	return j
 }
@@ -215,16 +224,20 @@ func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 		return out, nil
 	}
 
+	n := &node{op: opNew, in: reflect.TypeFor[I](), name: name, fn: funcSymbol(fn)}
 	var run func(...I) (Files, error)
 	switch f := any(fn).(type) {
 	case func(I) (File, error):
 		run = b.each(func(in I) (Files, error) { return named(single(f(in))) })
 	case func(I) (Files, error):
 		run = b.each(func(in I) (Files, error) { return named(f(in)) })
+		n.manyOut = true
 	case func(...I) (File, error):
 		run = func(in ...I) (Files, error) { return named(single(f(in...))) }
+		n.manyIn = true
 	case func(...I) (Files, error):
 		run = func(in ...I) (Files, error) { return named(f(in...)) }
+		n.manyIn, n.manyOut = true, true
 	default:
 		panic(fmt.Sprintf("unreachable: %T is not a GenFunc", fn))
 	}
@@ -238,7 +251,7 @@ func (b Builder[I]) New[F GenFunc[I]](name string, fn F) Jenny[I] {
 			return nil, fmt.Errorf("%s returned invalid Files: %w", name, err)
 		}
 		return fl, nil
-	})
+	}, n)
 }
 
 func single(f File, err error) (Files, error) {

@@ -8,7 +8,7 @@ jenny is built on one constraint: **a jenny maps an input type to a file with a 
 
 The constraint is enforced by the language, not by convention. A jenny's signature is inputs in and files out, and its func never sees what other jennies produce. Where a hand-rolled generator would add a knob and a conditional, a jenny-based one usually adds a jenny. That doesn't guarantee cleanly defined responsibilities, but it tends to produce them.
 
-Generator funcs are plain Go that turn inputs into files, written however you like. Everything between them is composition. You combine jennies into one tree that reads like the output it produces, and the framework does the plumbing. Then you write the result to disk, or in CI, check that what's on disk is up to date.
+Generator funcs are plain Go that turn inputs into files, written however you like. Everything between them is composition. You combine jennies into one tree that reads like the output it produces, and the framework does the plumbing. Then you write the result to disk, or in CI, check that what's on disk is up to date. You can also draw the tree, to see what it produces where without running it.
 
 The walkthrough below builds a generator for a small API one piece at a time. Every snippet is from [readme_test.go](readme_test.go), which checks the outputs shown here.
 
@@ -237,6 +237,50 @@ if os.Getenv("CODEGEN_VERIFY") != "" {
 }
 return fs.Write(ctx, root)
 ```
+
+### 7. Draw it
+
+`Mermaid` draws a jenny as a [Mermaid](https://mermaid.js.org) flowchart, from its declaration alone. Nothing is generated:
+
+```go
+diagram, err := gen.Mermaid(jenny.DiagramDocs())
+```
+```mermaid
+flowchart LR
+    n0(["`Resource`"])
+    subgraph n1["`**Map** header`"]
+        subgraph n2["`**Prefix** pkg/api → **Map** gofmt`"]
+            n3["`**GoTypes** · goType
+pkg/api/…
+1 file per Resource`"]
+            n4["`**Routes** · routes
+pkg/api/…
+1 file`"]
+        end
+        subgraph n5["`**Adapt** → **Prefix** web/src/api`"]
+            n6[["`versions`"]]
+            n7(["`Version`"])
+            n8["`**TSPaths** · tsPaths
+web/src/api/…
+1 file per Version`"]
+            n9["`**TSIndex** · tsIndex
+web/src/api/…
+1 file per Resource`"]
+        end
+    end
+    n0 -->|"1→1"| n3
+    n0 -->|"N→1"| n4
+    n0 -->|"1→N"| n6
+    n6 --> n7
+    n7 -->|"1→1"| n8
+    n7 -->|"N→1"| n9
+    click n0 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Resource" "Resource is one resource in an API definition."
+    click n7 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Version" "Version is one API version of a Resource."
+```
+
+Rounded nodes are input types: the generator's, and the one each `Adapt` converts to with its adapter func, here `versions`. Each box is a jenny, with the directory its files go in and how many files it makes. Arrows show what each jenny and adapter is given, labeled with the shape of its func: `N→1` is `func(...I) (File, error)`. A frame surrounds the jennies that an `Adapt`, `PrefixBy`, `With` or decorator applies to, and its title lists what applies, in the order it applies. The diagram shows what step 5 explains: `TSIndex` makes a file per resource, not one in all, because it's inside a single-input `Adapt`.
+
+`DiagramDocs` reads the source of the packages the types and funcs come from. Their doc comments become tooltips (hover over `Resource`), and each `Map` is labeled with the `FileMapper` it was given. Without it, a mapper that isn't a named func is labeled with the line `Map` was called on.
 
 ## Asking what a File holds
 
