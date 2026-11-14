@@ -151,11 +151,11 @@ flowchart LR
 *allTypes* ×k₆ˋ"])
         n15["ˋ**Index**ˋ"]
     end
-    n5["ˋn·k₁·k₂ˋ"]@{ shape: text }
+    n5["ˋn·k₁·k₂ˋ"]@{ shape: doc }
     n6["ˋ./ˋ"]@{ shape: folder }
-    n10["ˋn·k₁·k₃·k₄ˋ"]@{ shape: text }
-    n13["ˋnˋ"]@{ shape: text }
-    n16["ˋ1ˋ"]@{ shape: text }
+    n10["ˋn·k₁·k₃·k₄ˋ"]@{ shape: doc }
+    n13["ˋnˋ"]@{ shape: doc }
+    n16["ˋ1ˋ"]@{ shape: doc }
     n0 --> n3
     n3 --> n4
     n4 -.- n5 -.- n6
@@ -189,7 +189,7 @@ flowchart LR
             n3["ˋ**Routes**ˋ"]
         end
     end
-    n4["ˋnˋ"]@{ shape: text }
+    n4["ˋnˋ"]@{ shape: doc }
     n5["ˋweb/{Resource}/ˋ"]@{ shape: folder }
     n0 ==> n3
     n3 -.- n4 -.- n5
@@ -217,7 +217,7 @@ flowchart LR
             end
         end
     end
-    n6["ˋn·kˋ"]@{ shape: text }
+    n6["ˋn·kˋ"]@{ shape: doc }
     n7["ˋgen/ˋ"]@{ shape: folder }
     n0 --> n5
     n5 -.- n6 -.- n7
@@ -251,14 +251,14 @@ flowchart LR
         n11["ˋ**Index**ˋ"]
         n14["ˋ**Files** ×kˋ"]
     end
-    n3["ˋ1ˋ"]@{ shape: text }
+    n3["ˋ1ˋ"]@{ shape: doc }
     n4["ˋ./ˋ"]@{ shape: folder }
-    n6["ˋn·kˋ"]@{ shape: text }
-    n8["ˋ1ˋ"]@{ shape: text }
+    n6["ˋn·kˋ"]@{ shape: doc }
+    n8["ˋ1ˋ"]@{ shape: doc }
     n9["ˋone/ˋ"]@{ shape: folder }
-    n12["ˋ1ˋ"]@{ shape: text }
+    n12["ˋ1ˋ"]@{ shape: doc }
     n13["ˋouter/both/ˋ"]@{ shape: folder }
-    n15["ˋn·kˋ"]@{ shape: text }
+    n15["ˋn·kˋ"]@{ shape: doc }
     n0 ==> n2
     n2 -.- n3 -.- n4
     n0 --> n5
@@ -306,9 +306,9 @@ flowchart LR
         n2["ˋ**Files** ×k₁ˋ"]
         n5["ˋ**Bundle** ×k₂ˋ"]
     end
-    n3["ˋn·k₁ˋ"]@{ shape: text }
+    n3["ˋn·k₁ˋ"]@{ shape: doc }
     n4["ˋ./ˋ"]@{ shape: folder }
-    n6["ˋk₂ˋ"]@{ shape: text }
+    n6["ˋk₂ˋ"]@{ shape: doc }
     n0 --> n2
     n2 -.- n3 -.- n4
     n0 ==> n5
@@ -331,7 +331,7 @@ flowchart LR
     subgraph n1["ˋ ˋ"]
         n2["ˋ**a\_b\*c#quot;d#lt;e#gt;#35;f#amp;g'h\~i\\j**ˋ"]
     end
-    n3["ˋnˋ"]@{ shape: text }
+    n3["ˋnˋ"]@{ shape: doc }
     n4["ˋ\_x\_/ˋ"]@{ shape: folder }
     n0 --> n2
     n2 -.- n3 -.- n4
@@ -365,7 +365,7 @@ flowchart LR
             end
         end
     end
-    n8["ˋn·kˋ"]@{ shape: text }
+    n8["ˋn·kˋ"]@{ shape: doc }
     n9["ˋ{Lineage}/{Schema}/ˋ"]@{ shape: folder }
     n0 --> n5
     n5 --> n7
@@ -394,7 +394,7 @@ flowchart LR
             n4["ˋ**GoTypes**ˋ"]
         end
     end
-    n5["ˋn·kˋ"]@{ shape: text }
+    n5["ˋn·kˋ"]@{ shape: doc }
     n6["ˋ./ˋ"]@{ shape: folder }
     n0 --> n3
     n3 --> n4
@@ -450,11 +450,11 @@ flowchart LR
             n18["ˋ(empty)ˋ"]
         end
     end
-    n5["ˋn·kˋ"]@{ shape: text }
+    n5["ˋn·kˋ"]@{ shape: doc }
     n6["ˋ./ˋ"]@{ shape: folder }
-    n8["ˋn·kˋ"]@{ shape: text }
-    n11["ˋnˋ"]@{ shape: text }
-    n15["ˋn·kˋ"]@{ shape: text }
+    n8["ˋn·kˋ"]@{ shape: doc }
+    n11["ˋnˋ"]@{ shape: doc }
+    n15["ˋn·kˋ"]@{ shape: doc }
     n0 --> n3
     n3 --> n4
     n4 -.- n5 -.- n6

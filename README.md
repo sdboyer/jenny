@@ -266,12 +266,12 @@ flowchart LR
             end
         end
     end
-    n5["`n`"]@{ shape: text }
+    n5["`n`"]@{ shape: doc }
     n6["`pkg/api/`"]@{ shape: folder }
-    n8["`1`"]@{ shape: text }
-    n12["`n·k`"]@{ shape: text }
+    n8["`1`"]@{ shape: doc }
+    n12["`n·k`"]@{ shape: doc }
     n13["`web/src/api/`"]@{ shape: folder }
-    n15["`n`"]@{ shape: text }
+    n15["`n`"]@{ shape: doc }
     n0 --> n4
     n4 -.- n5 -.- n6
     n0 ==> n7
@@ -291,7 +291,7 @@ flowchart LR
 
 Read it left to right, from the input type to the directories files are placed under. An arrow runs from a type to each func that's given it: a thin one to a func called once per input, and a thick one to a func that takes `...I`, like `Routes`, called once with all of them. An `Adapt` is drawn as the type it converts to, over the name of its adapter.
 
-On each dotted line is how many files a jenny makes from n resources. `versions` returns several versions for each resource, so it's marked `×k`, and `TSPaths`, run once per version, makes n·k files. A jenny that returns `Files` is marked the same way. A frame shows where a `Map` applies, and a dashed frame what's run once per input: `TSIndex` makes a file per resource, not one in all, because it's inside a single-input `Adapt`, as step 5 explains. A jenny that returns nothing for some input makes fewer.
+On each dotted line, a document holds how many files a jenny makes from n resources. `versions` returns several versions for each resource, so it's marked `×k`, and `TSPaths`, run once per version, makes n·k files. A jenny that returns `Files` is marked the same way. A frame shows where a `Map` applies, and a dashed frame what's run once per input: `TSIndex` makes a file per resource, not one in all, because it's inside a single-input `Adapt`, as step 5 explains. A jenny that returns nothing for some input makes fewer.
 
 `DiagramDocs` reads the source of the packages the types and funcs come from. Their doc comments become tooltips (hover over `Resource`), and each `Map` is labeled with the `FileMapper` it was given. Without it, a mapper that isn't a named func is labeled with the line `Map` was called on.
 

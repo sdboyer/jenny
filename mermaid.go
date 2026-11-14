@@ -45,9 +45,9 @@ func DiagramDocs() DiagramOption {
 // Each jenny has a dotted line to the directory its files are placed under,
 // as far as that's known before anything runs: [Jenny.Prefix] is drawn only
 // there, {T} is the directory a [Builder.PrefixBy] over Ts picks, and a
-// FileMapper that moves files isn't accounted for. On the line is how many
-// files the jenny makes, in terms of n, the number of inputs given to the
-// jenny Mermaid is called on. A jenny that returns [Files], and an
+// FileMapper that moves files isn't accounted for. On the line, a document
+// holds how many files the jenny makes, in terms of n, the number of inputs
+// given to the jenny Mermaid is called on. A jenny that returns [Files], and an
 // adapter that returns a slice, is marked with a factor of its own, ×k, or
 // ×k₁, ×k₂ and so on, for how many it returns each time it's called. A count
 // is the most a jenny makes: a nil File or an empty Files makes fewer.
@@ -249,12 +249,12 @@ func (d *diagram) feed(from, to string, many bool) {
 }
 
 // output draws the dotted line from a jenny to the directory its files are
-// placed in, through how many files it makes. The count is a node of its own,
-// without a border, rather than the line's label, which Mermaid draws on a
-// background of its own without padding.
+// placed in, through a document holding how many files it makes. The count is
+// a node rather than the line's label, which Mermaid draws on a background of
+// its own without padding.
 func (d *diagram) output(from string, count []string, dir string) {
 	n := d.id()
-	d.outDefs = append(d.outDefs, n+`["`+"`"+product(count)+"`"+`"]@{ shape: text }`)
+	d.outDefs = append(d.outDefs, n+`["`+"`"+product(count)+"`"+`"]@{ shape: doc }`)
 	id, ok := d.dirs[dir]
 	if !ok {
 		id = d.id()

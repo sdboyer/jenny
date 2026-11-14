@@ -36,9 +36,9 @@ func ExampleJenny_Mermaid() {
 	//         n2["`**Go**`"]
 	//         n5["`**Index**`"]
 	//     end
-	//     n3["`n`"]@{ shape: text }
+	//     n3["`n`"]@{ shape: doc }
 	//     n4["`gen/`"]@{ shape: folder }
-	//     n6["`1`"]@{ shape: text }
+	//     n6["`1`"]@{ shape: doc }
 	//     n0 --> n2
 	//     n2 -.- n3 -.- n4
 	//     n0 ==> n5
