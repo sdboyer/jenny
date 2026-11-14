@@ -29,20 +29,19 @@ func ExampleJenny_Mermaid() {
 	// ---
 	// config:
 	//   layout: elk
+	//   themeCSS: "span.edgeLabel { display: inline-block; padding: 3px 8px; }"
 	// ---
 	// flowchart LR
 	//     n0(["`**string** ×n`"])
 	//     subgraph n1["` `"]
 	//         n2["`**Go**`"]
-	//         n5["`**Index**`"]
+	//         n4["`**Index**`"]
 	//     end
-	//     n3["`n`"]@{ shape: doc }
-	//     n4["`gen/`"]@{ shape: folder }
-	//     n6["`1`"]@{ shape: doc }
+	//     n3["`gen/`"]@{ shape: folder }
 	//     n0 --> n2
-	//     n2 -.- n3 -.- n4
-	//     n0 ==> n5
-	//     n5 -.- n6 -.- n4
+	//     n2 -.-|"n"| n3
+	//     n0 ==> n4
+	//     n4 -.-|"1"| n3
 	//     classDef hidden fill:none,stroke:none
 	//     class n1 hidden
 }

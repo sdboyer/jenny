@@ -249,6 +249,7 @@ diagram, err := gen.Mermaid(jenny.DiagramDocs())
 ---
 config:
   layout: elk
+  themeCSS: "span.edgeLabel { display: inline-block; padding: 3px 8px; }"
 ---
 flowchart LR
     n0(["`**Resource** ×n`"])
@@ -256,42 +257,38 @@ flowchart LR
         subgraph n2["`**Map** header`"]
             subgraph n3["`**Map** gofmt`"]
                 n4["`**GoTypes**`"]
-                n7["`**Routes**`"]
+                n6["`**Routes**`"]
             end
-            subgraph n9["` `"]
-                n10(["`**Version**
+            subgraph n7["` `"]
+                n8(["`**Version**
 *versions* ×k`"])
-                n11["`**TSPaths**`"]
-                n14["`**TSIndex**`"]
+                n9["`**TSPaths**`"]
+                n11["`**TSIndex**`"]
             end
         end
     end
-    n5["`n`"]@{ shape: doc }
-    n6["`pkg/api/`"]@{ shape: folder }
-    n8["`1`"]@{ shape: doc }
-    n12["`n·k`"]@{ shape: doc }
-    n13["`web/src/api/`"]@{ shape: folder }
-    n15["`n`"]@{ shape: doc }
+    n5["`pkg/api/`"]@{ shape: folder }
+    n10["`web/src/api/`"]@{ shape: folder }
     n0 --> n4
-    n4 -.- n5 -.- n6
-    n0 ==> n7
-    n7 -.- n8 -.- n6
-    n0 --> n10
-    n10 --> n11
-    n11 -.- n12 -.- n13
-    n10 ==> n14
-    n14 -.- n15 -.- n13
+    n4 -.-|"n"| n5
+    n0 ==> n6
+    n6 -.-|"1"| n5
+    n0 --> n8
+    n8 --> n9
+    n9 -.-|"n·k"| n10
+    n8 ==> n11
+    n11 -.-|"n"| n10
     click n0 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Resource" "Resource is one resource in an API definition."
-    click n10 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Version" "Version is one API version of a Resource."
+    click n8 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Version" "Version is one API version of a Resource."
     classDef hidden fill:none,stroke:none
     class n1 hidden
     classDef each fill:none,stroke-dasharray:4 3
-    class n9 each
+    class n7 each
 ```
 
 Read it left to right, from the input type to the directories files are placed under. An arrow runs from a type to each func that's given it: a thin one to a func called once per input, and a thick one to a func that takes `...I`, like `Routes`, called once with all of them. An `Adapt` is drawn as the type it converts to, over the name of its adapter.
 
-On each dotted line, a document holds how many files a jenny makes from n resources. `versions` returns several versions for each resource, so it's marked `×k`, and `TSPaths`, run once per version, makes n·k files. A jenny that returns `Files` is marked the same way. A frame shows where a `Map` applies, and a dashed frame what's run once per input: `TSIndex` makes a file per resource, not one in all, because it's inside a single-input `Adapt`, as step 5 explains. A jenny that returns nothing for some input makes fewer.
+Each dotted line is labeled with how many files a jenny makes from n resources. `versions` returns several versions for each resource, so it's marked `×k`, and `TSPaths`, run once per version, makes n·k files. A jenny that returns `Files` is marked the same way. A frame shows where a `Map` applies, and a dashed frame what's run once per input: `TSIndex` makes a file per resource, not one in all, because it's inside a single-input `Adapt`, as step 5 explains. A jenny that returns nothing for some input makes fewer.
 
 `DiagramDocs` reads the source of the packages the types and funcs come from. Their doc comments become tooltips (hover over `Resource`), and each `Map` is labeled with the `FileMapper` it was given. Without it, a mapper that isn't a named func is labeled with the line `Map` was called on.
 
