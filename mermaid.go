@@ -45,9 +45,9 @@ func DiagramDocs() DiagramOption {
 // Each jenny has a dotted line to the directory its files are placed under,
 // as far as that's known before anything runs: [Jenny.Prefix] is drawn only
 // there, {T} is the directory a [Builder.PrefixBy] over Ts picks, and a
-// FileMapper that moves files isn't accounted for. The line is labeled with
-// how many files the jenny makes, in terms of n, the number of inputs given
-// to the jenny Mermaid is called on. A jenny that returns [Files], and an
+// FileMapper that moves files isn't accounted for. On the line is how many
+// files the jenny makes, in terms of n, the number of inputs given to the
+// jenny Mermaid is called on. A jenny that returns [Files], and an
 // adapter that returns a slice, is marked with a factor of its own, ×k, or
 // ×k₁, ×k₂ and so on, for how many it returns each time it's called. A count
 // is the most a jenny makes: a nil File or an empty Files makes fewer.
@@ -78,7 +78,7 @@ type diagram struct {
 	src     *docSource // nil without DiagramDocs
 	body    strings.Builder
 	dirs    map[string]string // directory node IDs, by directory
-	dirDefs []string          // directory nodes, in the order they're first used
+	outDefs []string          // count and directory nodes, in the order they're first used
 	edges   []string
 	clicks  []string
 	each    []string // the frames around jennies run once per input
@@ -110,7 +110,7 @@ func (d *diagram) render(root *node) (string, error) {
 	var b strings.Builder
 	b.WriteString("---\nconfig:\n  layout: elk\n---\nflowchart LR\n")
 	b.WriteString(d.body.String())
-	for _, group := range [][]string{d.dirDefs, d.edges, d.clicks} {
+	for _, group := range [][]string{d.outDefs, d.edges, d.clicks} {
 		for _, s := range group {
 			b.WriteString("    " + s + "\n")
 		}
@@ -249,15 +249,19 @@ func (d *diagram) feed(from, to string, many bool) {
 }
 
 // output draws the dotted line from a jenny to the directory its files are
-// placed in, labeled with how many files it makes.
+// placed in, through how many files it makes. The count is a node of its own,
+// without a border, rather than the line's label, which Mermaid draws on a
+// background of its own without padding.
 func (d *diagram) output(from string, count []string, dir string) {
+	n := d.id()
+	d.outDefs = append(d.outDefs, n+`["`+"`"+product(count)+"`"+`"]@{ shape: text }`)
 	id, ok := d.dirs[dir]
 	if !ok {
 		id = d.id()
 		d.dirs[dir] = id
-		d.dirDefs = append(d.dirDefs, id+`["`+"`"+escLabel(dirLabel(dir))+"`"+`"]@{ shape: folder }`)
+		d.outDefs = append(d.outDefs, id+`["`+"`"+escLabel(dirLabel(dir))+"`"+`"]@{ shape: folder }`)
 	}
-	d.edges = append(d.edges, from+` -.-|"`+product(count)+`"| `+id)
+	d.edges = append(d.edges, from+" -.- "+n+" -.- "+id)
 }
 
 // mapperLabel names the FileMapper given to a Map: by its own name if it's a

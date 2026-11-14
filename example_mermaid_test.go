@@ -34,13 +34,15 @@ func ExampleJenny_Mermaid() {
 	//     n0(["`**string** ×n`"])
 	//     subgraph n1["` `"]
 	//         n2["`**Go**`"]
-	//         n4["`**Index**`"]
+	//         n5["`**Index**`"]
 	//     end
-	//     n3["`gen/`"]@{ shape: folder }
+	//     n3["`n`"]@{ shape: text }
+	//     n4["`gen/`"]@{ shape: folder }
+	//     n6["`1`"]@{ shape: text }
 	//     n0 --> n2
-	//     n2 -.-|"n"| n3
-	//     n0 ==> n4
-	//     n4 -.-|"1"| n3
+	//     n2 -.- n3 -.- n4
+	//     n0 ==> n5
+	//     n5 -.- n6 -.- n4
 	//     classDef hidden fill:none,stroke:none
 	//     class n1 hidden
 }

@@ -138,36 +138,40 @@ flowchart LR
             n3(["ˋ**Type**
 *groupTypes* ×k₁ˋ"])
             n4["ˋ**Files** ×k₂ˋ"]
-            subgraph n6["ˋ ˋ"]
-                n7(["ˋ**Field**
+            subgraph n7["ˋ ˋ"]
+                n8(["ˋ**Field**
 *typeFields* ×k₃ˋ"])
-                n8["ˋ**FieldFiles** ×k₄ˋ"]
+                n9["ˋ**FieldFiles** ×k₄ˋ"]
             end
-            n9(["ˋ**Field**
+            n11(["ˋ**Field**
 *allFields* ×k₅ˋ"])
-            n10["ˋ**FieldIndex**ˋ"]
+            n12["ˋ**FieldIndex**ˋ"]
         end
-        n11(["ˋ**Type**
+        n14(["ˋ**Type**
 *allTypes* ×k₆ˋ"])
-        n12["ˋ**Index**ˋ"]
+        n15["ˋ**Index**ˋ"]
     end
-    n5["ˋ./ˋ"]@{ shape: folder }
+    n5["ˋn·k₁·k₂ˋ"]@{ shape: text }
+    n6["ˋ./ˋ"]@{ shape: folder }
+    n10["ˋn·k₁·k₃·k₄ˋ"]@{ shape: text }
+    n13["ˋnˋ"]@{ shape: text }
+    n16["ˋ1ˋ"]@{ shape: text }
     n0 --> n3
     n3 --> n4
-    n4 -.-|"n·k₁·k₂"| n5
-    n3 --> n7
-    n7 --> n8
-    n8 -.-|"n·k₁·k₃·k₄"| n5
-    n3 ==> n9
-    n9 ==> n10
-    n10 -.-|"n"| n5
-    n0 ==> n11
+    n4 -.- n5 -.- n6
+    n3 --> n8
+    n8 --> n9
+    n9 -.- n10 -.- n6
+    n3 ==> n11
     n11 ==> n12
-    n12 -.-|"1"| n5
+    n12 -.- n13 -.- n6
+    n0 ==> n14
+    n14 ==> n15
+    n15 -.- n16 -.- n6
     classDef hidden fill:none,stroke:none
     class n1 hidden
     classDef each fill:none,stroke-dasharray:4 3
-    class n2,n6 each
+    class n2,n7 each
 `,
 		},
 		{
@@ -185,9 +189,10 @@ flowchart LR
             n3["ˋ**Routes**ˋ"]
         end
     end
-    n4["ˋweb/{Resource}/ˋ"]@{ shape: folder }
+    n4["ˋnˋ"]@{ shape: text }
+    n5["ˋweb/{Resource}/ˋ"]@{ shape: folder }
     n0 ==> n3
-    n3 -.-|"n"| n4
+    n3 -.- n4 -.- n5
     classDef hidden fill:none,stroke:none
     class n1 hidden
     classDef each fill:none,stroke-dasharray:4 3
@@ -212,9 +217,10 @@ flowchart LR
             end
         end
     end
-    n6["ˋgen/ˋ"]@{ shape: folder }
+    n6["ˋn·kˋ"]@{ shape: text }
+    n7["ˋgen/ˋ"]@{ shape: folder }
     n0 --> n5
-    n5 -.-|"n·k"| n6
+    n5 -.- n6 -.- n7
     classDef hidden fill:none,stroke:none
     class n1 hidden
 `,
@@ -239,26 +245,31 @@ flowchart LR
     n0(["ˋ**Type** ×nˋ"])
     subgraph n1["ˋ ˋ"]
         n2["ˋ**Index**ˋ"]
-        n4["ˋ**Files** ×kˋ"]
-        n5["ˋ**Index**ˋ"]
-        n7["ˋ(empty)ˋ"]
-        n8["ˋ**Index**ˋ"]
-        n10["ˋ**Files** ×kˋ"]
+        n5["ˋ**Files** ×kˋ"]
+        n7["ˋ**Index**ˋ"]
+        n10["ˋ(empty)ˋ"]
+        n11["ˋ**Index**ˋ"]
+        n14["ˋ**Files** ×kˋ"]
     end
-    n3["ˋ./ˋ"]@{ shape: folder }
-    n6["ˋone/ˋ"]@{ shape: folder }
-    n9["ˋouter/both/ˋ"]@{ shape: folder }
+    n3["ˋ1ˋ"]@{ shape: text }
+    n4["ˋ./ˋ"]@{ shape: folder }
+    n6["ˋn·kˋ"]@{ shape: text }
+    n8["ˋ1ˋ"]@{ shape: text }
+    n9["ˋone/ˋ"]@{ shape: folder }
+    n12["ˋ1ˋ"]@{ shape: text }
+    n13["ˋouter/both/ˋ"]@{ shape: folder }
+    n15["ˋn·kˋ"]@{ shape: text }
     n0 ==> n2
-    n2 -.-|"1"| n3
-    n0 --> n4
-    n4 -.-|"n·k"| n3
-    n0 ==> n5
-    n5 -.-|"1"| n6
-    n0 --> n7
-    n0 ==> n8
-    n8 -.-|"1"| n9
+    n2 -.- n3 -.- n4
+    n0 --> n5
+    n5 -.- n6 -.- n4
+    n0 ==> n7
+    n7 -.- n8 -.- n9
     n0 --> n10
-    n10 -.-|"n·k"| n9
+    n0 ==> n11
+    n11 -.- n12 -.- n13
+    n0 --> n14
+    n14 -.- n15 -.- n13
     classDef hidden fill:none,stroke:none
     class n1 hidden
 `,
@@ -293,13 +304,15 @@ flowchart LR
     n0(["ˋ**Type** ×nˋ"])
     subgraph n1["ˋ ˋ"]
         n2["ˋ**Files** ×k₁ˋ"]
-        n4["ˋ**Bundle** ×k₂ˋ"]
+        n5["ˋ**Bundle** ×k₂ˋ"]
     end
-    n3["ˋ./ˋ"]@{ shape: folder }
+    n3["ˋn·k₁ˋ"]@{ shape: text }
+    n4["ˋ./ˋ"]@{ shape: folder }
+    n6["ˋk₂ˋ"]@{ shape: text }
     n0 --> n2
-    n2 -.-|"n·k₁"| n3
-    n0 ==> n4
-    n4 -.-|"k₂"| n3
+    n2 -.- n3 -.- n4
+    n0 ==> n5
+    n5 -.- n6 -.- n4
     classDef hidden fill:none,stroke:none
     class n1 hidden
 `,
@@ -318,9 +331,10 @@ flowchart LR
     subgraph n1["ˋ ˋ"]
         n2["ˋ**a\_b\*c#quot;d#lt;e#gt;#35;f#amp;g'h\~i\\j**ˋ"]
     end
-    n3["ˋ\_x\_/ˋ"]@{ shape: folder }
+    n3["ˋnˋ"]@{ shape: text }
+    n4["ˋ\_x\_/ˋ"]@{ shape: folder }
     n0 --> n2
-    n2 -.-|"n"| n3
+    n2 -.- n3 -.- n4
     classDef hidden fill:none,stroke:none
     class n1 hidden
 `,
@@ -351,10 +365,11 @@ flowchart LR
             end
         end
     end
-    n8["ˋ{Lineage}/{Schema}/ˋ"]@{ shape: folder }
+    n8["ˋn·kˋ"]@{ shape: text }
+    n9["ˋ{Lineage}/{Schema}/ˋ"]@{ shape: folder }
     n0 --> n5
     n5 --> n7
-    n7 -.-|"n·k"| n8
+    n7 -.- n8 -.- n9
     click n0 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Lineage" "Lineage and Schema stand in for a thema lineage, which holds several versions of a schema."
     click n7 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#schemaGoTypes" "schemaGoTypes generates Go types for one schema. It knows nothing about lineages: it writes types.go in package schema, so it's also usable on its own over a single schema."
     classDef hidden fill:none,stroke:none
@@ -379,10 +394,11 @@ flowchart LR
             n4["ˋ**GoTypes**ˋ"]
         end
     end
-    n5["ˋ./ˋ"]@{ shape: folder }
+    n5["ˋn·kˋ"]@{ shape: text }
+    n6["ˋ./ˋ"]@{ shape: folder }
     n0 --> n3
     n3 --> n4
-    n4 -.-|"n·k"| n5
+    n4 -.- n5 -.- n6
     click n0 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#Lineage" "Lineage and Schema stand in for a thema lineage, which holds several versions of a schema."
     click n3 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#placedSchema" "placedSchema is a Schema with the directory its output goes in and the Go package it's in."
     click n4 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#placedGoTypes" "placedGoTypes generates Go types for a placed schema, and writes its own path and package from the placement."
@@ -418,45 +434,49 @@ flowchart LR
             n3(["ˋ**Type**
 *groupTypes* ×kˋ"])
             n4["ˋ**Docs**ˋ"]
-            n6["ˋ**Copy**ˋ"]
-            subgraph n7["ˋ**Map** stampˋ"]
-                n8["ˋ**Index**ˋ"]
+            n7["ˋ**Copy**ˋ"]
+            subgraph n9["ˋ**Map** stampˋ"]
+                n10["ˋ**Index**ˋ"]
             end
-            subgraph n9["ˋ ˋ"]
-                n10(["ˋ**box[jenny\_test.Type]**
+            subgraph n12["ˋ ˋ"]
+                n13(["ˋ**box[jenny\_test.Type]**
 *boxType*ˋ"])
-                n11["ˋ**Boxed**ˋ"]
+                n14["ˋ**Boxed**ˋ"]
             end
         end
-        subgraph n12["ˋ ˋ"]
-            n13(["ˋ**unlisted**
+        subgraph n16["ˋ ˋ"]
+            n17(["ˋ**unlisted**
 *func@mermaid\_test.go:` + fmt.Sprint(toUnlistedLine) + `*ˋ"])
-            n14["ˋ(empty)ˋ"]
+            n18["ˋ(empty)ˋ"]
         end
     end
-    n5["ˋ./ˋ"]@{ shape: folder }
+    n5["ˋn·kˋ"]@{ shape: text }
+    n6["ˋ./ˋ"]@{ shape: folder }
+    n8["ˋn·kˋ"]@{ shape: text }
+    n11["ˋnˋ"]@{ shape: text }
+    n15["ˋn·kˋ"]@{ shape: text }
     n0 --> n3
     n3 --> n4
-    n4 -.-|"n·k"| n5
-    n3 --> n6
-    n6 -.-|"n·k"| n5
-    n3 ==> n8
-    n8 -.-|"n"| n5
-    n3 --> n10
-    n10 --> n11
-    n11 -.-|"n·k"| n5
-    n0 --> n13
+    n4 -.- n5 -.- n6
+    n3 --> n7
+    n7 -.- n8 -.- n6
+    n3 ==> n10
+    n10 -.- n11 -.- n6
+    n3 --> n13
     n13 --> n14
+    n14 -.- n15 -.- n6
+    n0 --> n17
+    n17 --> n18
     click n3 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#groupTypes" "groupTypes adapts a Group to the Types in it."
     click n4 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeGens.Docs" "Docs writes a type's documentation."
-    click n6 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeCopy" "typeCopy copies its input, whatever its type."
-    click n8 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeIndex" "typeIndex lists the names of the types it's given."
-    click n10 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#box" "box holds a value. boxType puts a Type in a box."
-    click n11 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeCopy" "typeCopy copies its input, whatever its type."
+    click n7 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeCopy" "typeCopy copies its input, whatever its type."
+    click n10 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeIndex" "typeIndex lists the names of the types it's given."
+    click n13 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#box" "box holds a value. boxType puts a Type in a box."
+    click n14 href "https://pkg.go.dev/github.com/sdboyer/jenny_test#typeCopy" "typeCopy copies its input, whatever its type."
     classDef hidden fill:none,stroke:none
     class n1 hidden
     classDef each fill:none,stroke-dasharray:4 3
-    class n2,n9,n12 each
+    class n2,n12,n16 each
 `,
 		},
 	} {
