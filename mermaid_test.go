@@ -89,9 +89,9 @@ func mermaid[I any](j jenny.Jenny[I], opts ...jenny.DiagramOption) func() (strin
 	return func() (string, error) { return j.Mermaid(opts...) }
 }
 
-// wantDiagram returns want with each ˋ replaced by a backtick, which a raw
+// expectedDiagram returns want with each ˋ replaced by a backtick, which a raw
 // string can't hold.
-func wantDiagram(want string) string { return strings.ReplaceAll(want, "ˋ", "`") }
+func expectedDiagram(want string) string { return strings.ReplaceAll(want, "ˋ", "`") }
 
 //nolint:dupword,maintidx // a table of expected diagrams, which name nodes more than once in a row
 func TestMermaid(t *testing.T) {
@@ -465,7 +465,7 @@ flowchart LR
 			if err != nil {
 				t.Fatal(err)
 			}
-			if diff := cmp.Diff(wantDiagram(tc.want), got); diff != "" {
+			if diff := cmp.Diff(expectedDiagram(tc.want), got); diff != "" {
 				t.Errorf("diagram mismatch (-want +got):\n%s", diff)
 			}
 		})
