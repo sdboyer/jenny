@@ -33,6 +33,7 @@ func (b Builder[P]) Adapt[A Input, F AdaptFunc[P, A]](fn F, js ...Jenny[A]) Jenn
 		return sub.gen(drop(as)...)
 	}
 
+	n := &node{op: opAdapt, in: reflect.TypeFor[P](), out: reflect.TypeFor[A](), fn: funcSymbol(fn), children: describeAll(js)}
 	var run func(...P) (Files, error)
 	switch f := any(fn).(type) {
 	case func(P) (A, error):
@@ -42,18 +43,21 @@ func (b Builder[P]) Adapt[A Input, F AdaptFunc[P, A]](fn F, js ...Jenny[A]) Jenn
 		})
 	case func(P) ([]A, error):
 		run = b.each(func(in P) (Files, error) { return adapted(f(in)) })
+		n.manyOut = true
 	case func(...P) (A, error):
 		run = func(in ...P) (Files, error) {
 			a, err := f(in...)
 			return adapted([]A{a}, err)
 		}
+		n.manyIn = true
 	case func(...P) ([]A, error):
 		run = func(in ...P) (Files, error) { return adapted(f(in...)) }
+		n.manyIn, n.manyOut = true, true
 	default:
 		panic(fmt.Sprintf("unreachable: %T is not an AdaptFunc", fn))
 	}
 
-	return newJenny(run)
+	return newJenny(run, n)
 }
 
 // dropNil returns a func that removes nil values from a slice of A, or that

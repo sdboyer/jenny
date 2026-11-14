@@ -5,8 +5,10 @@ package jenny_test
 import (
 	"fmt"
 	"go/format"
+	"os"
 	"sort"
 	"strings"
+	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/sdboyer/jenny"
@@ -256,4 +258,34 @@ func Example_readme() {
 	// web/src/api/playlist/v2.ts (TSPaths)
 	// web/src/api/team/index.ts (TSIndex)
 	// web/src/api/team/v1.ts (TSPaths)
+}
+
+// The diagram in the README is the generator from Example_readme, drawn.
+func TestReadmeMermaid(t *testing.T) {
+	gen := jenny.Map(header,
+		jenny.Prefix("pkg/api",
+			api.New("GoTypes", goType),
+			api.New("Routes", routes),
+		).Map(gofmt),
+		api.Adapt(versions,
+			ver.New("TSPaths", tsPaths),
+			ver.New("TSIndex", tsIndex),
+		).Prefix("web/src/api"),
+	)
+	got, err := gen.Mermaid(jenny.DiagramDocs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, block, ok := strings.Cut(string(readme), "```mermaid\n")
+	if !ok {
+		t.Fatal("no mermaid block in README.md")
+	}
+	block, _, _ = strings.Cut(block, "```\n")
+	if diff := cmp.Diff(got, block); diff != "" {
+		t.Errorf("README.md's diagram is out of date (-want +got):\n%s", diff)
+	}
 }

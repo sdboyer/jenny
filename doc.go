@@ -130,5 +130,19 @@
 // [FS.VerifyFS] checks against any [io/fs.FS] instead, and both report each
 // file that drifted as a [DriftError].
 //
+// # Drawing a pipeline
+//
+// [Jenny.Mermaid] draws a jenny as a Mermaid flowchart, from its declaration
+// alone, without generating anything. The flowchart shows:
+//   - the input types, and the type each Adapt converts to
+//   - every jenny, and whether it's given one input at a time or all at once
+//   - the directory each jenny's files are placed under, and how many files
+//     it makes, in terms of the number of inputs
+//   - frames around the jennies a Map or With applies to, and around those
+//     that are run once per input
+//
+// With [DiagramDocs], the doc comments of those types and funcs become
+// tooltips.
+//
 // Jenny is the successor to github.com/grafana/codejen.
 package jenny

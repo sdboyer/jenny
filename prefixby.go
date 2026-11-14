@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"reflect"
 )
 
 // PrefixBy returns a [Pipeline] of the provided jennies that runs once per
@@ -59,5 +60,5 @@ func (b Builder[I]) PrefixBy(dir func(I) string, js ...Jenny[I]) Jenny[I] {
 			return nil, errors.Join(errs...)
 		}
 		return all, all.Validate()
-	})
+	}, &node{op: opPrefixBy, in: reflect.TypeFor[I](), fn: funcSymbol(dir), children: describeAll(js)})
 }
